@@ -98,8 +98,9 @@ for _, row in df_schedule.iterrows():
 
 steam_profile = steam_breakdown.sum(axis=1)
 
-# === Gantt Chart ===
-st.subheader("Gantt Chart")
+# === Process Control Sequence ===
+st.subheader("Process Control Sequence")
+st.markdown("*Fullscreen view on the top right section of the image*")
 colors = {
     'Adsorption': '#4B9CD3',
     'Evacuation': '#FFB347',
