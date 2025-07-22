@@ -4,23 +4,60 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# === Input Configuration ===
-st.title("Process Control Scheduler")
+# === SCENARIO TOGGLES ===
+st.sidebar.header("Scenario Settings")
+TOTAL_MINUTES = 1440
+desorption_mode = st.sidebar.radio(
+    "Desorption Strategy",
+    options=["Serialized", "Interleaved"],
+    index=1
+)
 
-st.subheader("Cycle Times")
-ad_duration = st.number_input("Adsorption Duration (min)", 10, 120, 60)
-evac_duration = st.number_input("Evacuation Duration (min)", 1, 60, 6)
-ncg_duration = st.number_input("NCG Purging Duration (min)", 5, 60, 13)
-heat_duration = st.number_input("Heating Duration (min)", 10, 60, 17)
-co2_duration = st.number_input("CO2 Purging Duration (min)", 10, 60, 53)
-cool_duration = st.number_input("Cooling Duration (min)", 10, 60, 25)
-delay_m2 = st.number_input("Start Delay for M2&M4 (min)", 0, 300, 90)
+module_setup = st.sidebar.selectbox(
+    "Module Configuration",
+    options=["2 Modules (M1&M3)", "4 Modules (M1&3, M2&M4)"],
+    index=0
+)
+
+# === MODULE LIST BASED ON TOGGLE ===
+if module_setup == "2 Modules (M1 & M2)":
+    MODULES = ["M1", "M2"]
+else:
+    MODULES = ["M1&M3", "M2&M4"]
+
+# === PHASES ===
+PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
+
+# === TAG WHICH PHASES BELONG TO DESORPTION ===
+DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'}
+
+
+# === SERIALIZATION LOCK ===
+desorption_lock_time = 0  # Time until which desorption is blocked for others
+
+
+# === Input Configuration ===
+st.markdown("<h1 style='text-align: center;'>Process Control Schedule</h1>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("Phase Duration")
+    ad_duration = st.number_input("Adsorption Duration (min)", 10, 120, 60)
+    evac_duration = st.number_input("Evacuation Duration (min)", 1, 60, 6)
+    ncg_duration = st.number_input("NCG Purging Duration (min)", 5, 60, 13)
+    heat_duration = st.number_input("Heating Duration (min)", 10, 60, 17)
+    co2_duration = st.number_input("CO2 Purging Duration (min)", 10, 60, 53)
+    cool_duration = st.number_input("Cooling Duration (min)", 10, 60, 25)
+    delay_m2 = st.number_input("Start Delay for M2&M4 (min)", 0, 300, 90)
 
 # === Set Steam Flowrates ===
-st.subheader("Steam Demand")
-ncg_purging = st.number_input("NCG Purging (kg/hr)", 0, 300, 150)
-heating = st.number_input("Heating (kg/hr)", 0, 300, 150)
-co2_purging = st.number_input("CO2 Purging (kg/hr)", 0, 300, 150)
+with col2:
+    st.markdown("Steam Demand")
+    ncg_purging = st.number_input("NCG Purging (kg/hr)", 0, 300, 150)
+    heating = st.number_input("Heating (kg/hr)", 0, 300, 150)
+    co2_purging = st.number_input("CO2 Purging (kg/hr)", 0, 300, 150)
 
 PHASE_DURATIONS = {
     'Adsorption': ad_duration,
@@ -31,8 +68,8 @@ PHASE_DURATIONS = {
     'Cooling': cool_duration
 }
 PHASES = list(PHASE_DURATIONS.keys())
-MODULES = ['M1&M3', 'M2&M4']
-TOTAL_MINUTES = 1440
+# MODULES = ['M1&M3', 'M2&M4']
+# TOTAL_MINUTES = 1440
 
 steam_demand_per_phase = {
     'NCG Purging': ncg_purging,
@@ -44,9 +81,13 @@ PHASE_GAPS = {
     ('Heating', 'CO2 Purging'): 2
 }
 
-# === Resource Usage Initialization ===
+# === RESOURCE TRACKING ===
 resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
-module_timers = {'M1&M3': 0, 'M2&M4': delay_m2}
+MODULE_DELAYS = {
+    'M1&M3': 0,
+    'M2&M4': delay_m2  # Delay in minutes
+}
+module_timers = {mod: MODULE_DELAYS.get(mod, 0) for mod in MODULES}
 schedule = []
 
 # === Scheduling Functions ===
@@ -57,22 +98,36 @@ def reserve(phase, start, duration):
     for t in range(start, start + duration):
         resource_usage[phase][t] += 1
 
+# === SCHEDULING LOOP ===
+
 while True:
     progress = False
     for mod in MODULES:
         t = module_timers[mod]
         cycle_phases = []
+
         for phase in PHASES:
             duration = PHASE_DURATIONS[phase]
+
+            # === ENFORCE SERIALIZATION FOR DESORPTION ===
+            if desorption_mode == "Serialized" and phase in DESORPTION_PHASES:
+                t = max(t, desorption_lock_time)
+
+            # Wait until resources are free
             while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
                 t += 1
             if t + duration > TOTAL_MINUTES:
                 break
+
             cycle_phases.append((phase, t, t + duration))
             reserve(phase, t, duration)
-            next_index = PHASES.index(phase) + 1
-            buffer_time = PHASE_GAPS.get((phase, PHASES[next_index]) if next_index < len(PHASES) else (None, None), 0)
-            t += duration + buffer_time
+
+            # If this is the last desorption phase, update lock
+            if desorption_mode == "Serialized" and phase == 'Cooling':
+                desorption_lock_time = t + duration
+
+            t += duration
+
         if len(cycle_phases) == len(PHASES):
             for phase, start, end in cycle_phases:
                 schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
@@ -81,7 +136,10 @@ while True:
     if not progress:
         break
 
+
 df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
+
+st.markdown("<h2 style='text-align: center;'>Cycle Summary</h2>", unsafe_allow_html=True)
 
 # === Display Cycle Counts ===
 st.subheader("Cycle Counts")
@@ -124,5 +182,3 @@ ax2.set_ylabel('Steam Demand (kg/hr)')
 ax2.set_xlabel('Time (minutes)')
 ax2.grid(True)
 st.pyplot(fig)
-
-
