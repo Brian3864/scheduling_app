@@ -4,6 +4,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+st.sidebar.markdown("##  Cycle Resources")
+fan_power = st.sidebar.number_input("Fan Rating (kW)", 0.0, 15.0, 1.5)
+boiler_power = st.sidebar.number_input("Boiler (kW)", 0.0, 500.0, 108.0)
+vpump = st.sidebar.number_input("Vacuum Pump (kW)", 0.0, 15.0, 5.5)
+ctower = st.sidebar.number_input("Cooling Tower (kW)", 0.0, 15.0, 3.0)
+
+st.sidebar.markdown("Steam Demand Per Phase")
+ncg_purging = st.sidebar.number_input("NCG Purging (kg/hr)", 0, 300, 150)
+heating = st.sidebar.number_input("Heating (kg/hr)", 0, 300, 150)
+co2_purging = st.sidebar.number_input("CO2 Purging (kg/hr)", 0, 300, 150)
+
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
 **Tab 1: 2-Modules**  
@@ -21,51 +32,31 @@ st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe
 tab1, tab2 = st.tabs(["2 MODULES", "4 MODULES"])
 
 with tab2:
-# === MODULES ===
+    # === MODULES ===
     MODULES = ["M1&M3", "M2&M4"]
 
-# === PHASES ===
+    # === PHASES ===
     PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
-
-# === TAG WHICH PHASES BELONG TO DESORPTION ===
     DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'}
 
-
-# === SERIALIZATION LOCK ===
-    desorption_lock_time = 0  # Time until which desorption is blocked for others
-
-
-# === Input Configuration ===
+    # === Input Configuration ===
     st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
 
-    col1, col2 = st.columns(2)
     with col1:
-        st.markdown("Scenario Setting")
         TOTAL_MINUTES = 1440
-        desorption_mode = st.radio(
-            "Desorption Strategy",
-            options=["Serialized", "Interleaved"],
-            index=1,
-            key="desorption_mode")
-        
- # === Set Steam Flowrates ===
-        st.markdown("Steam Demand Per Module Pair")
-        ncg_purging = st.number_input("*NCG Purging (kg/hr)*", 0, 300, 150)
-        heating = st.number_input("*Heating (kg/hr)*", 0, 300, 150)
-        co2_purging = st.number_input("*CO2 Purging (kg/hr)*", 0, 300, 150)
-    
+        desorption_mode = st.radio("Desorption Strategy", options=["Serialized", "Interleaved"], index=1)
+        delay_m2 = st.number_input("Start Delay for M2&M4 (min)", 0, 300, 83)
 
-# === PHASE DURATION ===
     with col2:
-        st.markdown("Phase Duration")
-        ad_duration = st.number_input("*Adsorption Duration (min)*", 10, 120, 60)
-        evac_duration = st.number_input("*Evacuation Duration (min)*", 1, 60, 6)
-        ncg_duration = st.number_input("*NCG Purging Duration (min)*", 5, 60, 13)
-        heat_duration = st.number_input("*Heating Duration (min)*", 10, 60, 17)
-        co2_duration = st.number_input("*CO2 Purging Duration (min)*", 10, 60, 53)
-        cool_duration = st.number_input("*Cooling Duration (min)*", 10, 60, 25)
-        delay_m2 = st.number_input("*Start Delay for M2&M4 (min)*", 0, 300, 83)
-
+        ad_duration = st.number_input("Adsorption Duration (min)", 10, 120, 60)
+        evac_duration = st.number_input("Evacuation Duration (min)", 1, 60, 6)
+        ncg_duration = st.number_input("NCG Purging Duration (min)", 5, 60, 13)
+    
+    with col3:
+        heat_duration = st.number_input("Heating Duration (min)", 10, 60, 17)
+        co2_duration = st.number_input("CO2 Purging Duration (min)", 10, 60, 53)
+        cool_duration = st.number_input("Cooling Duration (min)", 10, 60, 25)       
 
     PHASE_DURATIONS = {
         'Adsorption': ad_duration,
@@ -75,9 +66,6 @@ with tab2:
         'CO2 Purging': co2_duration,
         'Cooling': cool_duration
     }
-    PHASES = list(PHASE_DURATIONS.keys())
-# MODULES = ['M1&M3', 'M2&M4']
-# TOTAL_MINUTES = 1440
 
     steam_demand_per_phase = {
         'NCG Purging': ncg_purging,
@@ -85,16 +73,22 @@ with tab2:
         'CO2 Purging': co2_purging
     }
 
-# === RESOURCE TRACKING ===
-    resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
-    MODULE_DELAYS = {
-        'M1&M3': 0,
-        'M2&M4': delay_m2  # Delay in minutes
+    power_ratings = {
+        'Adsorption': fan_power,
+        'Evacuation': vpump,
+        'NCG Purging': boiler_power + vpump + ctower,
+        'Heating': boiler_power + vpump + ctower,
+        'CO2 Purging': boiler_power + vpump + ctower,
+        'Cooling': ctower + vpump
     }
+
+    # === RESOURCE TRACKING ===
+    resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
+    MODULE_DELAYS = {'M1&M3': 0, 'M2&M4': delay_m2}
     module_timers = {mod: MODULE_DELAYS.get(mod, 0) for mod in MODULES}
     schedule = []
+    desorption_lock_time = 0
 
-# === Scheduling Functions ===
     def can_allocate(phase, start, duration):
         return all(resource_usage[phase][t] == 0 for t in range(start, start + duration))
 
@@ -102,35 +96,24 @@ with tab2:
         for t in range(start, start + duration):
             resource_usage[phase][t] += 1
 
-# === SCHEDULING LOOP ===
     while True:
         progress = False
         for mod in MODULES:
             t = module_timers[mod]
             cycle_phases = []
-
             for phase in PHASES:
                 duration = PHASE_DURATIONS[phase]
-
-# === ENFORCE SERIALIZATION FOR DESORPTION ===
                 if desorption_mode == "Serialized" and phase in DESORPTION_PHASES:
                     t = max(t, desorption_lock_time)
-
-# Wait until resources are free
                 while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
                     t += 1
                 if t + duration > TOTAL_MINUTES:
                     break
-
                 cycle_phases.append((phase, t, t + duration))
                 reserve(phase, t, duration)
-
-# If this is the last desorption phase, update lock
                 if desorption_mode == "Serialized" and phase == 'Cooling':
                     desorption_lock_time = t + duration
-
                 t += duration
-
             if len(cycle_phases) == len(PHASES):
                 for phase, start, end in cycle_phases:
                     schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
@@ -139,52 +122,101 @@ with tab2:
         if not progress:
             break
 
-
     df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
+
+# === FLEXIBLE CYCLE COUNT ===
+    cycle_counts = []
+    for mod in MODULES:
+        mod_df = df_schedule[df_schedule['Module'] == mod].sort_values(by='Start').reset_index(drop=True)
+        count = 0
+        i = 0
+        while i <= len(mod_df) - len(PHASES):
+            window = mod_df.iloc[i:i+len(PHASES)]
+            if list(window['Phase']) == PHASES:
+                count += 1
+                i += len(PHASES)
+            else:
+                i += 1
+        cycle_counts.append({'Module': mod, 'Complete Cycles': count})
+    cycle_counts_df = pd.DataFrame(cycle_counts)
+    
     st.markdown("<h2 style='text-align: center;'>Complete Cycles</h2>", unsafe_allow_html=True)
+    st.dataframe(cycle_counts_df)
+    # === Gantt Chart ===
+    fig, ax1 = plt.subplots(figsize=(12, 5))
+    colors = {'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
+              'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'}
+    for _, row in df_schedule.iterrows():
+        ax1.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
+                 color=colors[row['Phase']], edgecolor='black')
+    ax1.set_title("Process Sequence")
+    ax1.set_xlim(0, TOTAL_MINUTES)
+    ax1.set_xlabel("Time (minutes)")
+    ax1.set_ylabel("Module Pair")
+    ax1.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()],
+               colors.keys(), loc='upper right')
+    st.pyplot(fig)
 
-# === Display Cycle Counts ===
-    cycle_counts = df_schedule.groupby('Module')['Phase'].apply(lambda x: x.str.fullmatch('Cooling').sum()).reset_index()
-    cycle_counts.columns = ['Module Pair', 'Complete Cycles']
-    st.dataframe(cycle_counts)
-
-# === Steam Demand Breakdown ===
+    # === Steam Profile ===
     steam_breakdown = pd.DataFrame(0, index=range(TOTAL_MINUTES), columns=steam_demand_per_phase.keys())
     for _, row in df_schedule.iterrows():
         if row['Phase'] in steam_demand_per_phase:
             for t in range(row['Start'], row['End']):
                 steam_breakdown.loc[t, row['Phase']] += steam_demand_per_phase[row['Phase']]
-
     steam_profile = steam_breakdown.sum(axis=1)
 
-# === Process Control Sequence ===
-    st.markdown("*Fullscreen view on the top right section of the image*")
-    colors = {
-        'Adsorption': '#4B9CD3',
-        'Evacuation': '#FFB347',
-        'NCG Purging': '#FFD700',
-        'Heating': '#E97451',
-        'CO2 Purging': '#90EE90',
-        'Cooling': '#9370DB'
-    }
-    #fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 9), sharex=True, gridspec_kw={'height_ratios': [3, 1.2]})
-    fig, ax1 = plt.subplots(figsize=(12, 5))
-    for _, row in df_schedule.iterrows():
-        ax1.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
-                color=colors[row['Phase']], edgecolor='black')
-    ax1.set_ylabel('Module Pair')
-    ax1.set_title('Process Sequence')
-    ax1.set_xlim(0, TOTAL_MINUTES)
-    ax1.legend([plt.Rectangle((0,0),1,1,color=c) for c in colors.values()], colors.keys(), loc='upper right', fontsize=8)
-    st.pyplot(fig)
-
-    fig, ax2 = plt.subplots(figsize=(12, 5))
+    st.markdown("### Steam Demand Profile")
+    fig2, ax2 = plt.subplots(figsize=(15, 3))
     ax2.plot(steam_profile.index, steam_profile.values, color='red', linewidth=2)
-    ax2.set_title('Overall Steam Demand (kg/hr)')
-    ax2.set_ylabel('Steam Demand (kg/hr)')
-    ax2.set_xlabel('Time (minutes)')
+    ax2.set_xlabel("Time (minutes)")
+    ax2.set_ylabel("Steam Demand (kg/hr)")
+    ax2.set_title("Total Steam Demand")
     ax2.grid(True)
-    st.pyplot(fig)
+    st.pyplot(fig2)
+
+    # === Power Profile ===
+    # === Shared Power Profile (Avoid Double Counting Shared Equipment) ===
+    power_profile = np.zeros(TOTAL_MINUTES)
+
+    for t in range(TOTAL_MINUTES):
+            # Get all active rows at time t
+        active_rows = df_schedule[(df_schedule['Start'] <= t) & (df_schedule['End'] > t)]
+
+        # === Module-specific: Adsorption (can run in parallel)
+        adsorption_rows = active_rows[active_rows['Phase'] == 'Adsorption']
+        power_profile[t] += len(adsorption_rows) * fan_power
+
+        # === Shared Desorption Equipment (count once if active)
+        active_phases = active_rows['Phase'].unique()
+
+    # --- Shared equipment — only add once even if multiple modules are active ---
+        if 'Evacuation' in active_phases:
+            power_profile[t] += vpump
+
+        if any(p in ['NCG Purging', 'Heating', 'CO2 Purging'] for p in active_phases):
+            power_profile[t] += boiler_power + vpump + ctower  # shared steam equipment
+
+        if 'Cooling' in active_phases:
+            power_profile[t] += ctower + vpump  # shared again but still only once
+
+        # === Peak Demand Info ===
+    peak_power = np.max(power_profile)
+    peak_time = int(np.argmax(power_profile))
+
+    # === Plot Power Profile ===
+    st.markdown("### Power Demand Profile")
+    fig3, ax3 = plt.subplots(figsize=(15, 3))
+    ax3.plot(power_profile, color='red', label='Power Demand')
+    ax3.axvline(peak_time, color='blue', linestyle='--', label=f'Peak @ {peak_time} min')
+    ax3.set_xlabel("Time (minutes)")
+    ax3.set_ylabel("Power (kW)")
+    ax3.set_title("Real-Time Power Demand")
+    ax3.legend()
+    ax3.grid(True)
+    st.pyplot(fig3)
+
+    # Optional: Show peak value
+    st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
 
 with tab1:
 # === INDIVIDUAL MODULE OPERATION ===
@@ -280,3 +312,40 @@ with tab1:
     ax.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()],
               labels=colors.keys(), loc='upper right', fontsize=8)
     st.pyplot(fig)
+
+    power_profile = np.zeros(TOTAL_MINUTES)
+
+    for t in range(TOTAL_MINUTES):
+            # Get all active rows at time t
+        active_rows = df_schedule[(df_schedule['Start'] <= t) & (df_schedule['End'] > t)]
+
+        # === Module-specific: Adsorption (can run in parallel)
+        adsorption_rows = active_rows[active_rows['Phase'] == 'Adsorption']
+        power_profile[t] += len(adsorption_rows) * fan_power
+
+        # === Shared Desorption Equipment (count once if active)
+        active_phases = active_rows['Phase'].unique()
+
+    # --- Shared equipment — only add once even if multiple modules are active ---
+        if 'Desorption' in active_phases:
+            power_profile[t] += boiler_power + vpump + ctower
+
+        # === Peak Demand Info ===
+    peak_power = np.max(power_profile)
+    peak_time = int(np.argmax(power_profile))
+
+    # === Plot Power Profile ===
+    st.markdown("### Power Demand Profile")
+    fig3, ax3 = plt.subplots(figsize=(15, 3))
+    ax3.plot(power_profile, color='red', label='Power Demand')
+    ax3.axvline(peak_time, color='blue', linestyle='--', label=f'Peak @ {peak_time} min')
+    ax3.set_xlabel("Time (minutes)")
+    ax3.set_ylabel("Power (kW)")
+    ax3.set_title("Real-Time Power Demand")
+    ax3.legend()
+    ax3.grid(True)
+    st.pyplot(fig3)
+
+    # Optional: Show peak value
+    st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
+ 
