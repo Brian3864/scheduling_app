@@ -51,13 +51,13 @@ with tab2:
 
     with col2:
         ad_d = st.number_input("Adsorption Duration (min)", 10, 120, 40)
-        evac_d = st.number_input("Evacuation Duration (min)", 1, 60, 6)
-        ncg_d = st.number_input("NCG Purging Duration (min)", 5, 60, 13)
+        evac_d = st.number_input("Evacuation Duration (min)", 0, 60, 6)
+        ncg_d = st.number_input("NCG Purging Duration (min)", 0, 60, 13)
     
     with col3:
         heat_d = st.number_input("Heating Duration (min)", 10, 60, 17)
-        co2_d = st.number_input("CO2 Purging Duration (min)", 10, 60, 53)
-        cool_d = st.number_input("Cooling Duration (min)", 10, 60, 25)       
+        co2_d = st.number_input("CO2 Purging Duration (min)", 0, 60, 53)
+        cool_d = st.number_input("Cooling Duration (min)", 0, 60, 25)       
 
     PHASE_DURATIONS = {
         'Adsorption': ad_d,
@@ -389,14 +389,14 @@ with tab3:
         target_st = st.number_input("Maximum Steam Demand (kg/hr)", 10, 300, 150)
         
     with col2:
-        adsorption = st.number_input("Adsorption Duration", 10, 120, 40)
-        evacuation = st.number_input("Evacuation Duration ", 1, 60, 6)
-        ncg = st.number_input("NCG Purging Duration", 5, 60, 13)
+        adsorption = st.number_input("Adsorption Duration", 0, 120, 40)
+        evacuation = st.number_input("Evacuation Duration ", 0, 60, 6)
+        ncg = st.number_input("NCG Purging Duration", 0, 60, 13)
 
     with col3:
-        heating = st.number_input("Heating Duration ", 10, 60, 17)
-        co2 = st.number_input("CO2 Purging Duration", 10, 60, 53)
-        cool = st.number_input("Cooling Duration", 10, 60, 25)
+        heating = st.number_input("Heating Duration ", 0, 60, 17)
+        co2 = st.number_input("CO2 Purging Duration", 0, 60, 53)
+        cool = st.number_input("Cooling Duration", 0, 60, 25)
 
     # Input from your configuration - now driven by Streamlit numbers
     PHASE_DURATIONS = {
