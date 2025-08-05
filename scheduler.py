@@ -50,12 +50,12 @@ with tab2:
         delay_m2 = st.number_input("Start Delay for M2&M4 (min)", 0, 300, 83)
 
     with col2:
-        ad_d = st.number_input("Adsorption Duration (min)", 10, 120, 40)
+        ad_d = st.number_input("Adsorption Duration (min)", 0, 120, 40)
         evac_d = st.number_input("Evacuation Duration (min)", 0, 60, 6)
         ncg_d = st.number_input("NCG Purging Duration (min)", 0, 60, 13)
     
     with col3:
-        heat_d = st.number_input("Heating Duration (min)", 10, 60, 17)
+        heat_d = st.number_input("Heating Duration (min)", 0, 60, 17)
         co2_d = st.number_input("CO2 Purging Duration (min)", 0, 60, 53)
         cool_d = st.number_input("Cooling Duration (min)", 0, 60, 25)       
 
