@@ -833,7 +833,7 @@ with tab2:
     ax1.set_title("Process Sequence (Solid = Stage 1, Hatched = Stage 2)")
     ax1.set_xlim(0, TOTAL_MINUTES)
     ax1.set_xlabel("Time (minutes)")
-    ax1.set_ylabel("Module Pair")
+    ax1.set_ylabel("Modules")
     
     # Create legend with phases and hatching styles
     phase_legend = [plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()]
