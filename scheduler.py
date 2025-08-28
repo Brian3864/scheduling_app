@@ -30,9 +30,9 @@ Choose between:
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
-tab1, tab2, tab3, tab4 = st.tabs(["Quick Set-Up", "4 MODULES", "Automatic Optimization", "M2&M4 + LRVP"])
+tab1, tab2, tab3, tab4 = st.tabs(["General Test", "M2&M4 + LRVP", "4 MODULES", "Automatic Optimization"])
 
-with tab2:
+with tab3:
      # === MODULES ===
     MODULES = ["M1&M3", "M2&M4"]
 
@@ -230,7 +230,7 @@ with tab1:
     with col1:
         st.markdown("Phase Duration")
         adsorption_duration = st.number_input("*Adsorption (min)*", 10, 240, 30)
-        desorption_duration = st.number_input("*Desorption (min)*", 10, 240, 90)
+        desorption_duration = st.number_input("*Desorption (min)*", 10, 240, 100)
         total_mins = st.number_input("*Operating Period (min)*", 0, 1440, 1440)
   
     with col2:
@@ -362,7 +362,7 @@ with tab1:
     # Optional: Show peak value
     st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
  
-with tab3:
+with tab4:
     # --- Streamlit UI Elements ---
     st.set_page_config(layout="wide") # Use wide layout for better visualization
 
@@ -692,7 +692,7 @@ with tab3:
         plt.tight_layout()
         st.pyplot(fig_power)
 
-with tab4: 
+with tab2: 
     # === MODULES ===
     MODULES = ["M2", "M4"]
 
