@@ -30,9 +30,655 @@ Choose between:
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
-tab1, tab2, tab3, tab4 = st.tabs(["General Test", "M2&M4 + LRVP", "4 MODULES", "Automatic Optimization"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "Module Pair Analysis", "M2&M4 + LRVP", "4 MODULES", "Automatic Optimization"])
 
-with tab3:
+with tab2: 
+          # ===============================
+     # Serialized/Interleaved simulator WITH FAN-PAIRING (A→…→C order preserved)
+     # CORRECTED: 2-slot D-chain lock in Serialized mode + per-module durations
+     # ENHANCED: Performance metrics dashboard + advanced visualizations
+     # FIXED: Each module reserves its own D-chain slot during tentative scheduling
+     # ===============================     
+     def _build_fan_map(modules, fan_pairs):
+         fan_of = {}
+         next_fan = 0
+         pairs = fan_pairs or []
+         for a, b in pairs:
+             if a not in fan_of and b not in fan_of:
+                 fan_of[a] = fan_of[b] = next_fan; next_fan += 1
+             elif a in fan_of and b not in fan_of:
+                 fan_of[b] = fan_of[a]
+             elif b in fan_of and a not in fan_of:
+                 fan_of[a] = fan_of[b]
+         for m in modules:
+             if m not in fan_of:
+                 fan_of[m] = next_fan; next_fan += 1
+         return fan_of
+     
+     def _dur_for(module_id, phase, PER_MODULE_DURATIONS, PHASE_DURATIONS):
+         """Return per-module phase duration if provided, else default."""
+         if PER_MODULE_DURATIONS and module_id in PER_MODULE_DURATIONS and phase in PER_MODULE_DURATIONS[module_id]:
+             return int(PER_MODULE_DURATIONS[module_id][phase])
+         return int(PHASE_DURATIONS[phase])
+     
+     def simulate_schedule_pairing(
+         MODULES,
+         PHASES,
+         DESORPTION_PHASES,
+         PHASE_DURATIONS,
+         TOTAL_MINUTES,
+         *, desorption_mode="Interleaved",
+         MODULE_DELAYS=None,
+         PHASE_GAPS=None,
+         steam_demand_per_phase=None,
+         fan_pairs=None,
+         ads_fan_exclusive=True,
+         desorption_capacity=None,
+         cooling_capacity=None,
+         PER_MODULE_DURATIONS=None
+     ):
+         import numpy as np
+         import pandas as pd
+     
+         if MODULE_DELAYS is None:
+             MODULE_DELAYS = {m: 0 for m in MODULES}
+         if PHASE_GAPS is None:
+             PHASE_GAPS = {}
+         if PER_MODULE_DURATIONS is None:
+             PER_MODULE_DURATIONS = {}
+     
+         nmods = len(MODULES)
+     
+         # ---------------- Capacities ----------------
+         if desorption_mode == "Serialized":
+             d_cap = 2
+             c_cap = 2
+         else:
+             d_cap = nmods if desorption_capacity is None else int(desorption_capacity)
+             c_cap = nmods if cooling_capacity    is None else int(cooling_capacity)
+     
+         RESOURCE_LIMITS = {}
+         for p in PHASES:
+             if p == "Cooling":
+                 RESOURCE_LIMITS[p] = c_cap
+             elif p in DESORPTION_PHASES:
+                 RESOURCE_LIMITS[p] = d_cap
+             else:
+                 RESOURCE_LIMITS[p] = nmods
+     
+         # ---------------- Timelines ----------------
+         resource_usage = {p: np.zeros(TOTAL_MINUTES, dtype=int) for p in PHASES}
+         module_timers  = {m: int(MODULE_DELAYS.get(m, 0)) for m in MODULES}
+     
+         # ---------------- Fan exclusivity ----------------
+         fan_of  = _build_fan_map(MODULES, fan_pairs)
+         fan_ids = sorted(set(fan_of.values()))
+         fan_occ = {fid: np.zeros(TOTAL_MINUTES, dtype=int) for fid in fan_ids}
+     
+         # ---------------- D-chain control ----------------
+         DCHAIN_PHASES = ["Evacuation", "NCG Purging", "Heating", "CO2 Purging"]
+         PHASE_ID = {p: i for i, p in enumerate(DCHAIN_PHASES)}
+     
+         if desorption_mode == "Interleaved":
+             dphase_id    = np.full(TOTAL_MINUTES, -1, dtype=int)
+             dphase_count = np.zeros(TOTAL_MINUTES, dtype=int)
+     
+         if desorption_mode == "Serialized":
+             serialized_locks = [0, 0]
+             # Track which modules have reserved which slots in THIS iteration
+             slots_reserved_by = {}  # {module_id: slot_index}
+     
+         # ---------------- Helpers ----------------
+         def can_phase(phase, s, d, usage, lim):
+             e = s + d
+             return e <= TOTAL_MINUTES and np.all(usage[phase][s:e] < lim)
+     
+         def reserve_phase(phase, s, d, usage):
+             usage[phase][s:s+d] += 1
+     
+         def can_fan(mod, phase, s, d, _fans):
+             if not ads_fan_exclusive or phase != "Adsorption":
+                 return True
+             e = s + d
+             fid = fan_of[mod]
+             return e <= TOTAL_MINUTES and np.all(_fans[fid][s:e] == 0)
+     
+         def reserve_fan(mod, phase, s, d, _fans):
+             if ads_fan_exclusive and phase == "Adsorption":
+                 fid = fan_of[mod]
+                 _fans[fid][s:s+d] += 1
+     
+         schedule_rows = []
+         progressed = True
+         while progressed:
+             progressed = False
+             
+             # Reset slot reservations for this iteration
+             if desorption_mode == "Serialized":
+                 slots_reserved_by = {}
+                 iteration_serialized_locks = serialized_locks.copy()
+             
+             # Try modules in order of ready time for Serialized Concurrent
+             modules_order = list(MODULES)
+             if desorption_mode == "Serialized" and fan_pairs == [(1, 2), (3, 4)]:
+                 # Sort by time, then prioritize odd modules (1, 3) over even (2, 4)
+                 modules_order = sorted(MODULES, key=lambda m: (module_timers[m], m % 2 == 0, m))
+             
+             for mod in modules_order:
+                 t = module_timers[mod]
+                 tmp_usage = {p: np.copy(resource_usage[p]) for p in PHASES}
+                 tmp_fans  = {fid: np.copy(arr) for fid, arr in fan_occ.items()}
+     
+                 if desorption_mode == "Interleaved":
+                     tmp_dphase_id    = np.copy(dphase_id)
+                     tmp_dphase_count = np.copy(dphase_count)
+     
+                 if desorption_mode == "Serialized":
+                     # Use the iteration-level locks that track all reservations so far
+                     tmp_serialized_locks = iteration_serialized_locks.copy()
+                     my_slot = None
+     
+                 cycle = []
+                 ok = True
+                 for idx, phase in enumerate(PHASES):
+                     dur = int(PER_MODULE_DURATIONS.get(mod, {}).get(phase, PHASE_DURATIONS[phase]))
+     
+                     if desorption_mode == "Serialized" and (phase in DESORPTION_PHASES or phase == "Cooling"):
+                         # Find the earliest available slot using SHARED iteration locks
+                         earliest_slot_time = min(iteration_serialized_locks)
+                         earliest_slot_idx = iteration_serialized_locks.index(earliest_slot_time)
+                         
+                         # Reserve this slot for this module
+                         if my_slot is None:
+                             my_slot = earliest_slot_idx
+                         
+                         t = max(t, earliest_slot_time)
+     
+                     s = t
+                     while s + dur <= TOTAL_MINUTES:
+                         # For Serialized mode D-chain phases, skip capacity check (use locks only)
+                         if desorption_mode == "Serialized" and (phase in DESORPTION_PHASES or phase == "Cooling"):
+                             ok_caps = True  # Don't check capacity, locks handle it
+                         else:
+                             ok_caps = can_phase(phase, s, dur, tmp_usage, RESOURCE_LIMITS[phase])
+                         
+                         ok_fan  = can_fan(mod, phase, s, dur, tmp_fans)
+                         
+                         if desorption_mode == "Interleaved":
+                             if phase in PHASE_ID:
+                                 e = s + dur
+                                 pid = PHASE_ID[phase]
+                                 seg_id  = tmp_dphase_id[s:e]
+                                 seg_cnt = tmp_dphase_count[s:e]
+                                 same_or_empty = (seg_id == -1) | (seg_id == pid)
+                                 ok_dchain = np.all(same_or_empty & (seg_cnt < d_cap))
+                             else:
+                                 ok_dchain = True
+                         else:
+                             ok_dchain = True
+     
+                         if ok_caps and ok_fan and ok_dchain:
+                             break
+                         s += 1
+     
+                     if s + dur > TOTAL_MINUTES:
+                         ok = False
+                         break
+     
+                     reserve_phase(phase, s, dur, tmp_usage)
+                     reserve_fan(mod, phase, s, dur, tmp_fans)
+     
+                     if desorption_mode == "Interleaved" and phase in PHASE_ID:
+                         e = s + dur
+                         pid = PHASE_ID[phase]
+                         sl = slice(s, e)
+                         empty_mask = (tmp_dphase_id[sl] == -1)
+                         tmp_dphase_id[sl][empty_mask] = pid
+                         tmp_dphase_count[sl] += 1
+     
+                     cycle.append((phase, s, s + dur))
+                     t = s + dur
+     
+                     if idx + 1 < len(PHASES):
+                         nxt = PHASES[idx + 1]
+                         t += int(PHASE_GAPS.get((phase, nxt), 0))
+     
+                     if desorption_mode == "Serialized" and phase == "Cooling":
+                         # Update the slot this module is using
+                         if my_slot is not None:
+                             tmp_serialized_locks[my_slot] = t
+                             # Update the iteration locks too
+                             iteration_serialized_locks[my_slot] = max(iteration_serialized_locks[my_slot], t)
+     
+                 if ok:
+                     for p in PHASES:
+                         resource_usage[p] = np.copy(tmp_usage[p])
+                     for fid in fan_occ:
+                         fan_occ[fid] = np.copy(tmp_fans[fid])
+     
+                     if desorption_mode == "Interleaved":
+                         dphase_id[:]    = tmp_dphase_id[:]
+                         dphase_count[:] = tmp_dphase_count[:]
+     
+                     if desorption_mode == "Serialized":
+                         # Commit the slot reservation
+                         if my_slot is not None:
+                             serialized_locks[my_slot] = tmp_serialized_locks[my_slot]
+                             slots_reserved_by[mod] = my_slot
+     
+                     for phase, s, e in cycle:
+                         schedule_rows.append({"Module": mod, "Phase": phase, "Start": s, "End": e})
+                     module_timers[mod] = t
+                     progressed = True
+                     
+                     # For Serialized Concurrent: commit one module at a time
+                     # This allows M3 to grab a slot before M2 in the next iteration
+                     if desorption_mode == "Serialized" and fan_pairs == [(1, 2), (3, 4)]:
+                         break  # Exit the for loop, start next iteration
+     
+         df_schedule = pd.DataFrame(schedule_rows).sort_values(["Module", "Start"]).reset_index(drop=True)
+         steam_profile = pd.Series([0.0]*TOTAL_MINUTES, index=range(TOTAL_MINUTES))
+         return df_schedule, steam_profile, resource_usage
+     
+     def count_complete_cycles(df_schedule, MODULES, PHASES):
+         out = []
+         for mod in MODULES:
+             md = df_schedule[df_schedule["Module"] == mod].sort_values("Start").reset_index(drop=True)
+             i = 0; cnt = 0
+             while i <= len(md) - len(PHASES):
+                 win = md.iloc[i:i+len(PHASES)]
+                 if list(win["Phase"]) == PHASES:
+                     cnt += 1; i += len(PHASES)
+                 else:
+                     i += 1
+             out.append({"Module": mod, "Complete Cycles": cnt})
+         return pd.DataFrame(out)
+     
+     def calculate_throughput(cycles_df, module_co2_capture):
+         """Calculate CO2 throughput based on complete cycles and per-module capture rates."""
+         throughput_df = cycles_df.copy()
+         throughput_df["CO₂/cycle (kg)"] = throughput_df["Module"].map(module_co2_capture)
+         throughput_df["CO₂ Captured (kg)"] = throughput_df["Complete Cycles"] * throughput_df["CO₂/cycle (kg)"]
+         return throughput_df
+     
+     def create_combined_metrics(df_schedule, cycles_df, modules, total_minutes, module_co2_capture):
+         """Create a combined metrics table with cycles, CO2, utilization, and active minutes."""
+         # Get utilization data
+         util_data = []
+         for mod in modules:
+             mod_data = df_schedule[df_schedule["Module"] == mod]
+             if len(mod_data) > 0:
+                 total_active = (mod_data["End"] - mod_data["Start"]).sum()
+                 utilization = (total_active / total_minutes) * 100
+             else:
+                 utilization = 0.0
+                 total_active = 0
+             util_data.append({
+                 "Module": mod, 
+                 "Utilization %": round(utilization, 1), 
+                 "Active Minutes": int(total_active)
+             })
+         util_df = pd.DataFrame(util_data)
+         
+         # Calculate throughput
+         throughput_df = calculate_throughput(cycles_df, module_co2_capture)
+         
+         # Combine all metrics
+         combined = pd.merge(throughput_df, util_df, on="Module")
+         combined["Module"] = combined["Module"].apply(lambda x: f"M{x}")
+         
+         # Reorder columns
+         combined = combined[["Module", "Complete Cycles", "CO₂/cycle (kg)", "CO₂ Captured (kg)", 
+                              "Utilization %", "Active Minutes"]]
+         return combined
+     
+     def plot_phase_distribution(df_schedule, phases, title):
+         """Create a pie chart showing time distribution across phases."""
+         phase_times = {}
+         for phase in phases:
+             phase_data = df_schedule[df_schedule["Phase"] == phase]
+             total_time = (phase_data["End"] - phase_data["Start"]).sum()
+             phase_times[phase] = total_time
+         
+         colors = {
+             'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
+             'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'
+         }
+         
+         fig, ax = plt.subplots(figsize=(8, 6))
+         wedges, texts, autotexts = ax.pie(
+             phase_times.values(), 
+             labels=phase_times.keys(),
+             autopct='%1.1f%%',
+             colors=[colors.get(p, '#888') for p in phase_times.keys()],
+             startangle=90
+         )
+         
+         for autotext in autotexts:
+             autotext.set_color('white')
+             autotext.set_fontweight('bold')
+         
+         ax.set_title(title)
+         plt.tight_layout()
+         return fig
+     
+     def plot_resource_usage_timeline(resource_usage, phases, total_minutes, title):
+         """Plot resource usage over time for each phase."""
+         fig, ax = plt.subplots(figsize=(16, 6))
+         
+         colors = {
+             'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
+             'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'
+         }
+         
+         time_axis = range(total_minutes)
+         for phase in phases:
+             if phase in resource_usage:
+                 ax.plot(time_axis, resource_usage[phase], label=phase, 
+                        color=colors.get(phase, '#888'), linewidth=1.5, alpha=0.7)
+         
+         ax.set_xlabel("Time (min)")
+         ax.set_ylabel("Number of Modules Active")
+         ax.set_title(title)
+         ax.legend(loc='upper right', fontsize=8)
+         ax.grid(True, alpha=0.3)
+         plt.tight_layout()
+         return fig
+     
+     def plot_gantt(df, modules, module_labels, phases, total_minutes, title):
+         colors = {
+             'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
+             'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'
+         }
+         df_plot = df.copy()
+         id_to_label = {m: f"M{m}" for m in modules}
+         df_plot["ModuleLabel"] = df_plot["Module"].map(id_to_label)
+     
+         fig, ax = plt.subplots(figsize=(16, 6))
+         df_plot["ModuleLabel"] = pd.Categorical(df_plot["ModuleLabel"], categories=module_labels, ordered=True)
+         df_plot = df_plot.sort_values(["ModuleLabel", "Start"])
+         for _, r in df_plot.iterrows():
+             ax.barh(r["ModuleLabel"], r["End"] - r["Start"], left=r["Start"],
+                     color=colors.get(r["Phase"], "#888"), edgecolor="black", linewidth=0.8)
+         ax.set_xlim(0, total_minutes)
+         ax.set_title(title)
+         ax.set_xlabel("Time (min)")
+         ax.set_ylabel("Modules")
+         ax.grid(True, axis='x', linestyle='--', alpha=0.4)
+         ax.legend([plt.Rectangle((0,0),1,1,color=colors[p]) for p in phases], phases,
+                   loc='upper right', fontsize=8)
+         return fig
+     
+     def create_pairing_options(n):
+         """Build pairing options for modules 1..n (Concurrent and Alternate only)."""
+         modules = list(range(1, n+1))
+         opts = {}
+     
+         # Concurrent (1-2, 3-4, ...)
+         seq = []
+         for i in range(0, n, 2):
+             if i + 1 < n:
+                 seq.append((modules[i], modules[i+1]))
+         if seq:
+             opts["Concurrent (M1&M2, M3&M4)"] = seq
+     
+         # Alternate (1-3, 2-4) then concurrent for the rest
+         if n >= 4 and n % 2 == 0:
+             alt = [(1, 3), (2, 4)]
+             for i in range(4, n, 2):
+                 if i + 1 < n:
+                     alt.append((i+1, i+2))
+             opts["Alternate (M1&M3, M2&M4)"] = alt
+     
+         return opts
+     
+     # ========== STREAMLIT APP ==========
+     st.title("Enhanced Analytics Per Module")
+     
+     n = 4
+     modules = list(range(1, n+1))
+     module_labels = [f"M{i}" for i in modules]
+     
+     PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
+     DESORPTION_PHASES = {'Evacuation','NCG Purging','Heating','CO2 Purging','Cooling'}
+     PHASE_DURATIONS = {'Adsorption':25,'Evacuation':7,'NCG Purging':2,'Heating':20,'CO2 Purging':40,'Cooling':30}
+     
+     st.markdown("#### Per-module phase durations (minutes)")
+     df_durs = pd.DataFrame({
+         "Module": module_labels,
+         "Adsorption": [PHASE_DURATIONS['Adsorption']]*n,
+         "Evacuation": [PHASE_DURATIONS['Evacuation']]*n,
+         "NCG Purging": [PHASE_DURATIONS['NCG Purging']]*n,
+         "Heating": [PHASE_DURATIONS['Heating']]*n,
+         "CO2 Purging": [PHASE_DURATIONS['CO2 Purging']]*n,
+         "Cooling": [PHASE_DURATIONS['Cooling']]*n,
+         "CO₂/cycle (kg)": [0.7]*n,  # Default CO2 capture per cycle
+     })
+     df_durs = st.data_editor(df_durs, num_rows="fixed", use_container_width=True)
+     
+     PER_MODULE_DURATIONS = {}
+     MODULE_CO2_CAPTURE = {}
+     for _, r in df_durs.iterrows():
+         mid = int(str(r["Module"]).replace("M",""))
+         PER_MODULE_DURATIONS[mid] = {
+             "Adsorption": int(r["Adsorption"]),
+             "Evacuation": int(r["Evacuation"]),
+             "NCG Purging": int(r["NCG Purging"]),
+             "Heating": int(r["Heating"]),
+             "CO2 Purging": int(r["CO2 Purging"]),
+             "Cooling": int(r["Cooling"]),
+         }
+         MODULE_CO2_CAPTURE[mid] = float(r["CO₂/cycle (kg)"])
+     
+     horizon = st.number_input("Analysis period (min)", 60, 1440, 600, step=10)
+     pairing_options = create_pairing_options(n)
+     
+     comparison_data = []
+     
+     for name, pairs in pairing_options.items():
+         st.markdown(f"## 🔧 {name}")
+         
+         # SERIALIZED
+         df_ser, _, res_ser = simulate_schedule_pairing(
+             MODULES=modules, PHASES=PHASES, DESORPTION_PHASES=DESORPTION_PHASES,
+             PHASE_DURATIONS=PHASE_DURATIONS, TOTAL_MINUTES=horizon,
+             desorption_mode="Serialized", fan_pairs=pairs, ads_fan_exclusive=True,
+             PER_MODULE_DURATIONS=PER_MODULE_DURATIONS
+         )
+         
+         st.markdown("### Serialized Mode")
+         fig_ser = plot_gantt(df_ser, modules, module_labels, PHASES, horizon, f"{name}: Serialized")
+         st.pyplot(fig_ser)
+         
+         st.markdown("#### Performance Metrics")
+         cycles_ser = count_complete_cycles(df_ser, modules, PHASES)
+         combined_ser = create_combined_metrics(df_ser, cycles_ser, modules, horizon, MODULE_CO2_CAPTURE)
+         
+         # Summary metrics
+         total_cycles_ser = cycles_ser["Complete Cycles"].sum()
+         total_co2_ser = combined_ser["CO₂ Captured (kg)"].sum()
+         avg_util_ser = combined_ser["Utilization %"].mean()
+         
+         metric_col1, metric_col2, metric_col3 = st.columns(3)
+         with metric_col1:
+             st.metric("Total Complete Cycles", total_cycles_ser)
+         with metric_col2:
+             st.metric("Total CO₂ Captured", f"{total_co2_ser:.1f} kg")
+         with metric_col3:
+             st.metric("Average Utilization", f"{avg_util_ser:.1f}%")
+         
+         st.dataframe(combined_ser, use_container_width=True, hide_index=True)
+         
+         with st.expander("Advanced Analytics - Serialized"):
+             viz_col1, viz_col2 = st.columns(2)
+             with viz_col1:
+                 fig_phase_ser = plot_phase_distribution(df_ser, PHASES, "Serialized: Phase Distribution")
+                 st.pyplot(fig_phase_ser)
+             with viz_col2:
+                 fig_res_ser = plot_resource_usage_timeline(res_ser, PHASES, horizon, "Serialized: Resource Usage")
+                 st.pyplot(fig_res_ser)
+         
+         # INTERLEAVED
+         df_int, _, res_int = simulate_schedule_pairing(
+             MODULES=modules, PHASES=PHASES, DESORPTION_PHASES=DESORPTION_PHASES,
+             PHASE_DURATIONS=PHASE_DURATIONS, TOTAL_MINUTES=horizon,
+             desorption_mode="Interleaved", fan_pairs=pairs, ads_fan_exclusive=True,
+             desorption_capacity=2, cooling_capacity=2,
+             PER_MODULE_DURATIONS=PER_MODULE_DURATIONS
+         )
+         
+         st.markdown("### Interleaved Mode")
+         fig_int = plot_gantt(df_int, modules, module_labels, PHASES, horizon, f"{name}: Interleaved")
+         st.pyplot(fig_int)
+         
+         st.markdown("#### Performance Metrics")
+         cycles_int = count_complete_cycles(df_int, modules, PHASES)
+         combined_int = create_combined_metrics(df_int, cycles_int, modules, horizon, MODULE_CO2_CAPTURE)
+         
+         # Summary metrics
+         total_cycles_int = cycles_int["Complete Cycles"].sum()
+         total_co2_int = combined_int["CO₂ Captured (kg)"].sum()
+         avg_util_int = combined_int["Utilization %"].mean()
+         
+         metric_col1, metric_col2, metric_col3 = st.columns(3)
+         with metric_col1:
+             st.metric("Total Complete Cycles", total_cycles_int)
+         with metric_col2:
+             st.metric("Total CO₂ Captured", f"{total_co2_int:.1f} kg")
+         with metric_col3:
+             st.metric("Average Utilization", f"{avg_util_int:.1f}%")
+         
+         st.dataframe(combined_int, use_container_width=True, hide_index=True)
+         
+         with st.expander("Advanced Analytics - Interleaved"):
+             viz_col1, viz_col2 = st.columns(2)
+             with viz_col1:
+                 fig_phase_int = plot_phase_distribution(df_int, PHASES, "Interleaved: Phase Distribution")
+                 st.pyplot(fig_phase_int)
+             with viz_col2:
+                 fig_res_int = plot_resource_usage_timeline(res_int, PHASES, horizon, "Interleaved: Resource Usage")
+                 st.pyplot(fig_res_int)
+         
+         comparison_data.append({
+             "Configuration": name, "Mode": "Serialized", "Total Cycles": total_cycles_ser,
+             "Cycles/Hour": round(total_cycles_ser / (horizon / 60), 2),
+             "CO₂ Captured (kg)": round(total_co2_ser, 1),
+             "kg/Hour": round(total_co2_ser / (horizon / 60), 2),
+             "Avg Utilization %": round(avg_util_ser, 1),
+             "Total Module-Hours": round(combined_ser["Active Minutes"].sum() / 60, 1)
+         })
+         comparison_data.append({
+             "Configuration": name, "Mode": "Interleaved", "Total Cycles": total_cycles_int,
+             "Cycles/Hour": round(total_cycles_int / (horizon / 60), 2),
+             "CO₂ Captured (kg)": round(total_co2_int, 1),
+             "kg/Hour": round(total_co2_int / (horizon / 60), 2),
+             "Avg Utilization %": round(avg_util_int, 1),
+             "Total Module-Hours": round(combined_int["Active Minutes"].sum() / 60, 1)
+         })
+         
+         st.markdown("---")
+     
+     # DASHBOARD
+     st.markdown("## Performance Comparison Dashboard")
+     df_comparison = pd.DataFrame(comparison_data)
+     
+     best_cycles = df_comparison["Total Cycles"].max()
+     best_util = df_comparison["Avg Utilization %"].max()
+     best_throughput = df_comparison["Cycles/Hour"].max()
+     best_co2 = df_comparison["CO₂ Captured (kg)"].max()
+     best_co2_rate = df_comparison["kg/Hour"].max()
+     
+     st.markdown("### Key Metrics Summary")
+     metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+     with metric_col1:
+         st.metric("🥇 Best Total Cycles", int(best_cycles))
+         best_config_cycles = df_comparison[df_comparison["Total Cycles"] == best_cycles].iloc[0]
+         st.caption(f"{best_config_cycles['Configuration']} - {best_config_cycles['Mode']}")
+     with metric_col2:
+         st.metric("⚡ Best Throughput", f"{best_throughput} cycles/hr")
+         best_config_throughput = df_comparison[df_comparison["Cycles/Hour"] == best_throughput].iloc[0]
+         st.caption(f"{best_config_throughput['Configuration']} - {best_config_throughput['Mode']}")
+     with metric_col3:
+         st.metric("🌍 Best CO₂ Capture", f"{best_co2} kg")
+         best_config_co2 = df_comparison[df_comparison["CO₂ Captured (kg)"] == best_co2].iloc[0]
+         st.caption(f"{best_config_co2['Configuration']} - {best_config_co2['Mode']}")
+     with metric_col4:
+         st.metric("📊 Best Utilization", f"{best_util}%")
+         best_config_util = df_comparison[df_comparison["Avg Utilization %"] == best_util].iloc[0]
+         st.caption(f"{best_config_util['Configuration']} - {best_config_util['Mode']}")
+     
+     st.markdown("### Detailed Comparison Table")
+     st.dataframe(
+         df_comparison.style.highlight_max(subset=["Total Cycles", "Cycles/Hour", "CO₂ Captured (kg)", "kg/Hour", "Avg Utilization %"], color='lightgreen'),
+         use_container_width=True, hide_index=True
+     )
+     
+     st.markdown("### Visual Comparisons")
+     comp_col1, comp_col2 = st.columns(2)
+     with comp_col1:
+         fig_bar, ax = plt.subplots(figsize=(10, 6))
+         df_pivot = df_comparison.pivot(index="Configuration", columns="Mode", values="Total Cycles")
+         df_pivot.plot(kind='bar', ax=ax, color=['#4B9CD3', '#E97451'])
+         ax.set_title("Total Cycles by Configuration & Mode")
+         ax.set_ylabel("Total Cycles")
+         ax.set_xlabel("Configuration")
+         ax.legend(title="Mode")
+         plt.xticks(rotation=45, ha='right')
+         plt.tight_layout()
+         st.pyplot(fig_bar)
+     
+     with comp_col2:
+         fig_bar2, ax = plt.subplots(figsize=(10, 6))
+         df_pivot2 = df_comparison.pivot(index="Configuration", columns="Mode", values="CO₂ Captured (kg)")
+         df_pivot2.plot(kind='bar', ax=ax, color=['#90EE90', '#FFB347'])
+         ax.set_title("CO₂ Captured by Configuration & Mode")
+         ax.set_ylabel("CO₂ Captured (kg)")
+         ax.set_xlabel("Configuration")
+         ax.legend(title="Mode")
+         plt.xticks(rotation=45, ha='right')
+         plt.tight_layout()
+         st.pyplot(fig_bar2)
+     
+     comp_col3, comp_col4 = st.columns(2)
+     with comp_col3:
+         fig_bar3, ax = plt.subplots(figsize=(10, 6))
+         df_pivot3 = df_comparison.pivot(index="Configuration", columns="Mode", values="kg/Hour")
+         df_pivot3.plot(kind='bar', ax=ax, color=['#9370DB', '#FFD700'])
+         ax.set_title("CO₂ Capture Rate by Configuration & Mode")
+         ax.set_ylabel("kg/Hour")
+         ax.set_xlabel("Configuration")
+         ax.legend(title="Mode")
+         plt.xticks(rotation=45, ha='right')
+         plt.tight_layout()
+         st.pyplot(fig_bar3)
+     
+     with comp_col4:
+         fig_bar4, ax = plt.subplots(figsize=(10, 6))
+         df_pivot4 = df_comparison.pivot(index="Configuration", columns="Mode", values="Avg Utilization %")
+         df_pivot4.plot(kind='bar', ax=ax, color=['#E97451', '#4B9CD3'])
+         ax.set_title("Average Utilization by Configuration & Mode")
+         ax.set_ylabel("Utilization %")
+         ax.set_xlabel("Configuration")
+         ax.legend(title="Mode")
+         plt.xticks(rotation=45, ha='right')
+         plt.tight_layout()
+         st.pyplot(fig_bar4)
+     
+     st.markdown("### 💡 Recommendations")
+     best_config_cycles = df_comparison[df_comparison["Total Cycles"] == best_cycles].iloc[0]
+     best_config_co2 = df_comparison[df_comparison["CO₂ Captured (kg)"] == best_co2].iloc[0]
+     
+     if best_config_cycles["Mode"] == "Interleaved":
+         st.success(f"✅ **Interleaved mode with {best_config_cycles['Configuration']}** achieves the highest throughput ({int(best_cycles)} cycles, {best_co2:.1f} kg CO₂).")
+     else:
+         st.info(f"✅ **Serialized mode with {best_config_cycles['Configuration']}** achieves the highest throughput ({int(best_cycles)} cycles, {best_co2:.1f} kg CO₂).")
+     
+     # Show top 3 configurations
+     st.markdown("#### 📈 Top 3 Configurations by CO₂ Capture")
+     top_3 = df_comparison.nlargest(3, "CO₂ Captured (kg)")[["Configuration", "Mode", "Total Cycles", "CO₂ Captured (kg)", "kg/Hour", "Avg Utilization %"]]
+     st.dataframe(top_3, use_container_width=True, hide_index=True)
+     
+with tab4:
      # === MODULES ===
     MODULES = ["M1&M3", "M2&M4"]
 
@@ -362,7 +1008,7 @@ with tab1:
     # Optional: Show peak value
     st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
  
-with tab4:
+with tab5:
     # --- Streamlit UI Elements ---
     st.set_page_config(layout="wide") # Use wide layout for better visualization
 
@@ -692,7 +1338,7 @@ with tab4:
         plt.tight_layout()
         st.pyplot(fig_power)
 
-with tab2: 
+with tab3: 
     # === MODULES ===
     MODULES = ["M2", "M4"]
 
