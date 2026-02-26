@@ -1,38 +1,31 @@
-# === Streamlit App: Interleaved Desorption Scheduling & Steam Demand ===
+# === Streamlit App: Interleaved Desorption Scheduling ===
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import joblib
 
-st.sidebar.markdown("##  Cycle Resources")
-fan_power = st.sidebar.number_input("Fan Rating (kW)", 0.0, 15.0, 1.5)
-boiler_power = st.sidebar.number_input("Boiler (kW)", 0.0, 500.0, 108.0)
-vpump = st.sidebar.number_input("Vacuum Pump (kW)", 0.0, 15.0, 5.5)
-ctower = st.sidebar.number_input("Cooling Tower (kW)", 0.0, 15.0, 3.0)
-
-st.sidebar.markdown("Steam Demand Per Phase")
-ncg_purging = st.sidebar.number_input("NCG Purging (kg/hr)", 0, 300, 150)
-heating = st.sidebar.number_input("Heating (kg/hr)", 0, 300, 150)
-co2_purging = st.sidebar.number_input("CO2 Purging (kg/hr)", 0, 300, 150)
-
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
-**Tab 1: 2-Modules**  
+**Tab 1: General Test**  
 Customize:
 - **Adsorption and Desorption durations**
 - **Resource limits** – define how many modules can run each phase concurrently
 
-**Tab 2: 4-Modules**  
-Choose between:
-- **Serialized Desorption**: Entire desorption sequence is locked for one module pair at a time
-- **Interleaved Desorption**: Allows overlapping of non-conflicting phases (e.g., one pair heating, another cooling) while avoiding overlap in steam-intensive steps
+**Tab 2: M2&M4 + LRVP**  
+Stage-based visualization for paired modules.
+
+**Tab 3: Full Schedule Analysis**  
+- Schedule 2–32 modules (Group A + B) with shared resource limits
+- Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2)
+- Baseline analysis: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
+- Gantt charts, cycle counts, and phase breakdown (total minutes per phase)
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "Module Pair Analysis", "M2&M4 + LRVP", "4 MODULES", "Automatic Optimization"])
+tab1, tab2, tab3 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis"])
 
-with tab2: 
+if False:  # Module pair analysis removed (fan pairing fixed)
           # ===============================
      # Serialized/Interleaved simulator WITH FAN-PAIRING (A→…→C order preserved)
      # CORRECTED: 2-slot D-chain lock in Serialized mode + per-module durations
@@ -40,11 +33,11 @@ with tab2:
      # FIXED: Each module reserves its own D-chain slot during tentative scheduling
      # ===============================     
      # ===============================
-# Concurrent/Interleaved simulator WITH FAN-PAIRING (A→…→C order preserved)
-# CORRECTED: 2-slot D-chain lock in Concurrent mode + per-module durations
-# ENHANCED: Performance metrics dashboard + advanced visualizations
-# FIXED: Each module reserves its own D-chain slot during tentative scheduling
-# ===============================
+          # Concurrent/Interleaved simulator WITH FAN-PAIRING (A→…→C order preserved)
+          # CORRECTED: 2-slot D-chain lock in Concurrent mode + per-module durations
+          # ENHANCED: Performance metrics dashboard + advanced visualizations
+          # FIXED: Each module reserves its own D-chain slot during tentative scheduling
+          # ===============================
 
           def _build_fan_map(modules, fan_pairs):
               fan_of = {}
@@ -685,196 +678,6 @@ with tab2:
           top_3 = df_comparison.nlargest(3, "CO₂ Captured (kg)")[["Configuration", "Mode", "Total Cycles", "CO₂ Captured (kg)", "kg/Hour", "Avg Utilization %"]]
           st.dataframe(top_3, use_container_width=True, hide_index=True)
      
-with tab4:
-     # === MODULES ===
-    MODULES = ["M1&M3", "M2&M4"]
-
-    # === PHASES ===
-    PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
-    DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'}
-
-    # === Input Configuration ===
-    st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        desorption_mode = st.radio("Desorption Strategy", options=["Serialized", "Interleaved"], index=1)
-        delay_m2 = st.number_input("Start Delay for M2&M4 (min)", 0, 300, 62)
-        TOTAL_MINUTES = st.number_input("Operating Perid (min)", 0, 1440, 1440)
-
-    with col2:
-        ad_d = st.number_input("Adsorption Duration (min)", 0, 120, 25)
-        evac_d = st.number_input("Evacuation Duration (min)", 0, 60, 7)
-        ncg_d = st.number_input("NCG Purging Duration (min)", 0, 60, 2)
-    
-    with col3:
-        heat_d = st.number_input("Heating Duration (min)", 0, 60, 20)
-        co2_d = st.number_input("CO2 Purging Duration (min)", 0, 60, 40)
-        cool_d = st.number_input("Cooling Duration (min)", 0, 60, 30)       
-
-    PHASE_DURATIONS = {
-        'Adsorption': ad_d,
-        'Evacuation': evac_d,
-        'NCG Purging': ncg_d,
-        'Heating': heat_d,
-        'CO2 Purging': co2_d,
-        'Cooling': cool_d
-    }
-
-    steam_demand_per_phase = {
-        'NCG Purging': ncg_purging,
-        'Heating': heating,
-        'CO2 Purging': co2_purging
-    }
-
-    power_ratings = {
-        'Adsorption': fan_power,
-        'Evacuation': vpump,
-        'NCG Purging': boiler_power + vpump + ctower,
-        'Heating': boiler_power + vpump + ctower,
-        'CO2 Purging': boiler_power + vpump + ctower,
-        'Cooling': ctower + vpump
-    }
-
-    # === Use `delay` in your scheduling logic ===
-    module_timers = {'M1&M3': 0, 'M2&M4': delay_m2}
-
-    # === RESOURCE TRACKING ===
-    resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
-    MODULE_DELAYS = {'M1&M3': 0, 'M2&M4': delay_m2}
-    module_timers = {mod: MODULE_DELAYS.get(mod, 0) for mod in MODULES}
-    schedule = []
-    desorption_lock_time = 0
-
-    def can_allocate(phase, start, duration):
-        return all(resource_usage[phase][t] == 0 for t in range(start, start + duration))
-
-    def reserve(phase, start, duration):
-        for t in range(start, start + duration):
-            resource_usage[phase][t] += 1
-
-    while True:
-        progress = False
-        for mod in MODULES:
-            t = module_timers[mod]
-            cycle_phases = []
-            for phase in PHASES:
-                duration = PHASE_DURATIONS[phase]
-                if desorption_mode == "Serialized" and phase in DESORPTION_PHASES:
-                    t = max(t, desorption_lock_time)
-                while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
-                    t += 1
-                if t + duration > TOTAL_MINUTES:
-                    break
-                cycle_phases.append((phase, t, t + duration))
-                reserve(phase, t, duration)
-                if desorption_mode == "Serialized" and phase == 'Cooling':
-                    desorption_lock_time = t + duration
-                t += duration
-            if len(cycle_phases) == len(PHASES):
-                for phase, start, end in cycle_phases:
-                    schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
-                module_timers[mod] = t
-                progress = True
-        if not progress:
-            break
-
-    df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
-
-# === FLEXIBLE CYCLE COUNT ===
-    cycle_counts = []
-    for mod in MODULES:
-        mod_df = df_schedule[df_schedule['Module'] == mod].sort_values(by='Start').reset_index(drop=True)
-        count = 0
-        i = 0
-        while i <= len(mod_df) - len(PHASES):
-            window = mod_df.iloc[i:i+len(PHASES)]
-            if list(window['Phase']) == PHASES:
-                count += 1
-                i += len(PHASES)
-            else:
-                i += 1
-        cycle_counts.append({'Module': mod, 'Complete Cycles': count})
-    cycle_counts_df = pd.DataFrame(cycle_counts)
-    
-    st.markdown("<h2 style='text-align: center;'>Complete Cycles</h2>", unsafe_allow_html=True)
-    st.dataframe(cycle_counts_df)
-    # === Gantt Chart ===
-    fig, ax1 = plt.subplots(figsize=(12, 5))
-    colors = {'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
-              'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'}
-    for _, row in df_schedule.iterrows():
-        ax1.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
-                 color=colors[row['Phase']], edgecolor='black')
-    ax1.set_title("Process Sequence")
-    ax1.set_xlim(0, TOTAL_MINUTES)
-    ax1.set_xlabel("Time (minutes)")
-    ax1.set_ylabel("Modules")
-    ax1.legend([plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()],
-               colors.keys(), loc='upper right')
-    st.pyplot(fig)
-
-    # === Steam Profile ===
-    steam_breakdown = pd.DataFrame(0, index=range(TOTAL_MINUTES), columns=steam_demand_per_phase.keys())
-    for _, row in df_schedule.iterrows():
-        if row['Phase'] in steam_demand_per_phase:
-            for t in range(row['Start'], row['End']):
-                steam_breakdown.loc[t, row['Phase']] += steam_demand_per_phase[row['Phase']]
-    steam_profile = steam_breakdown.sum(axis=1)
-
-    st.markdown("### Steam Demand Profile")
-    fig2, ax2 = plt.subplots(figsize=(15, 3))
-    ax2.plot(steam_profile.index, steam_profile.values, color='red', linewidth=2)
-    ax2.set_xlabel("Time (minutes)")
-    ax2.set_ylabel("Steam Demand (kg/hr)")
-    ax2.set_title("Total Steam Demand")
-    ax2.grid(True)
-    st.pyplot(fig2)
-
-    # === Power Profile ===
-    # === Shared Power Profile (Avoid Double Counting Shared Equipment) ===
-    power_profile = np.zeros(TOTAL_MINUTES)
-
-    for t in range(TOTAL_MINUTES):
-            # Get all active rows at time t
-        active_rows = df_schedule[(df_schedule['Start'] <= t) & (df_schedule['End'] > t)]
-
-        # === Module-specific: Adsorption (can run in parallel)
-        adsorption_rows = active_rows[active_rows['Phase'] == 'Adsorption']
-        power_profile[t] += len(adsorption_rows) * fan_power
-
-        # === Shared Desorption Equipment (count once if active)
-        active_phases = active_rows['Phase'].unique()
-
-    # --- Shared equipment — only add once even if multiple modules are active ---
-        if 'Evacuation' in active_phases:
-            power_profile[t] += vpump
-
-        if any(p in ['NCG Purging', 'Heating', 'CO2 Purging'] for p in active_phases):
-            power_profile[t] += boiler_power + vpump + ctower  # shared steam equipment
-
-        if 'Cooling' in active_phases:
-            power_profile[t] += ctower + vpump  # shared again but still only once
-
-        # === Peak Demand Info ===
-    peak_power = np.max(power_profile)
-    peak_time = int(np.argmax(power_profile))
-
-    # === Plot Power Profile ===
-    st.markdown("### Power Demand Profile")
-    fig3, ax3 = plt.subplots(figsize=(15, 3))
-    ax3.plot(power_profile, color='red', label='Power Demand')
-    ax3.axvline(peak_time, color='blue', linestyle='--', label=f'Peak @ {peak_time} min')
-    ax3.set_xlabel("Time (minutes)")
-    ax3.set_ylabel("Power (kW)")
-    ax3.set_title("Real-Time Power Demand")
-    ax3.legend()
-    ax3.grid(True)
-    st.pyplot(fig3)
-
-    # Optional: Show peak value
-    st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
-
 with tab1:
 # === INDIVIDUAL MODULE OPERATION ===
     st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
@@ -978,101 +781,85 @@ with tab1:
               labels=colors.keys(), loc='upper right', fontsize=8)
     plt.tight_layout()
     st.pyplot(fig)
-
-    power_profile = np.zeros(TOTAL_MINUTES)
-
-    for t in range(TOTAL_MINUTES):
-            # Get all active rows at time t
-        active_rows = df_schedule[(df_schedule['Start'] <= t) & (df_schedule['End'] > t)]
-
-        # === Module-specific: Adsorption (can run in parallel)
-        adsorption_rows = active_rows[active_rows['Phase'] == 'Adsorption']
-        power_profile[t] += len(adsorption_rows) * fan_power
-
-        # === Shared Desorption Equipment (count once if active)
-        active_phases = active_rows['Phase'].unique()
-
-    # --- Shared equipment — only add once even if multiple modules are active ---
-        if 'Desorption' in active_phases:
-            power_profile[t] += boiler_power + vpump + ctower
-
-        # === Peak Demand Info ===
-    peak_power = np.max(power_profile)
-    peak_time = int(np.argmax(power_profile))
-
-    # === Plot Power Profile ===
-    st.markdown("### Power Demand Profile")
-    fig3, ax3 = plt.subplots(figsize=(15, 3))
-    ax3.plot(power_profile, color='red', label='Power Demand')
-    ax3.axvline(peak_time, color='blue', linestyle='--', label=f'Peak @ {peak_time} min')
-    ax3.set_xlabel("Time (minutes)")
-    ax3.set_ylabel("Power (kW)")
-    ax3.set_title("Real-Time Power Demand")
-    ax3.legend()
-    ax3.grid(True)
-    st.pyplot(fig3)
-
-    # Optional: Show peak value
-    st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
  
-with tab5:
-    # --- Streamlit UI Elements ---
-    st.set_page_config(layout="wide") # Use wide layout for better visualization
-
-    # === MODULES ===
-    MODULES = ["M1&M3", "M2&M4"]
-
+with tab3:
     # === PHASES ===
     PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
-    DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'} # Used for steam demand calculation
+    DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'}
+
+    # Backend constants (edit in code to change)
+    OPT_MAX_DELAY = 120
+    OPT_STEP = 1
+    DELAY_METHOD = "Automatic"
 
     # === Input Configuration ===
-    col1, col2, col3 = st.columns(3)
-
-    # --- Delay Selection Option ---
-    delay_method = 'Automatic'
-
-    with col1: 
-        # --- Desorption Mode Selection ---
-        desorption_mode = st.radio(
-            "Desorption Strategy",
-            ('Interleaved', 'Serialized'),
-            key='desorption_mode_radio',
-        help="Interleaved: Multiple modules can desorb simultaneously if resources allow. Serialized: Only one module can be in any desorption phase at a time."
-    )
-        target_st = st.number_input("Maximum Steam Demand (kg/hr)", 10, 300, 150)
+    st.subheader("Inputs")
+    in_col1, in_col2 = st.columns(2)
+    with in_col1:
+        total_modules = st.number_input("Total Modules", 2, 32, 16, step=2)
         target_time = st.number_input("Operating Period (Mins)", 0, 1440, 1440)
-        
-    with col2:
-        adsorption = st.number_input("Adsorption Duration", 0, 120, 25)
-        evacuation = st.number_input("Evacuation Duration ", 0, 60, 7)
-        ncg = st.number_input("NCG Purging Duration", 0, 60, 2)
+        adsorption_capacity = st.number_input(
+            "Adsorption capacity",
+            1, 32, 8,
+            help="Max modules in Adsorption at once."
+        )
+    with in_col2:
+        concurrent_desorption_cap = st.number_input(
+            "Concurrent: Max modules in desorption",
+            1, 32, 8,
+            help="Max modules in desorption phases + Cooling at the same time."
+        )
+        shared_evac_cooling_cap = st.number_input(
+            "Max modules: Evacuation + Cooling (Interleaved)",
+            1, 32, 8,
+            help="One shared resource for both phases. Max modules in Evacuation or Cooling combined at once."
+        )
+        shared_purge_heat_co2_cap = st.number_input(
+            "Max modules: NCG + Heating + CO2 (Interleaved)",
+            1, 32, 8,
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once."
+        )
+    st.caption("Phase durations (minutes) — edit directly in the table")
+    if "phase_durations_tab3" not in st.session_state:
+        st.session_state.phase_durations_tab3 = pd.DataFrame({
+            "Phase": PHASES,
+            "Group A (min)": [25, 7, 2, 20, 40, 30],
+            "Group B (min)": [25, 7, 2, 20, 40, 30],
+        })
+    df = st.session_state.phase_durations_tab3.copy()
+    if "Capacity" in df.columns:
+        df = df.drop(columns=["Capacity"])
+        st.session_state.phase_durations_tab3 = df
+    phase_edited = st.data_editor(
+        st.session_state.phase_durations_tab3,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=120, default=25, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=120, default=25, required=True),
+        },
+        key="phase_durations_editor_tab3",
+    )
+    st.session_state.phase_durations_tab3 = phase_edited
+    grp_a = {phase: int(phase_edited.loc[phase_edited["Phase"] == phase, "Group A (min)"].iloc[0]) for phase in PHASES}
+    grp_b = {phase: int(phase_edited.loc[phase_edited["Phase"] == phase, "Group B (min)"].iloc[0]) for phase in PHASES}
+    PHASE_DURATIONS = grp_a
+    PHASE_DURATIONS_BY_GROUP = {"A": grp_a, "B": grp_b}
 
-    with col3:
-        heating = st.number_input("Heating Duration ", 0, 60, 20)
-        co2 = st.number_input("CO2 Purging Duration", 0, 60, 40)
-        cool = st.number_input("Cooling Duration", 0, 60, 30)
-
-    # Input from your configuration - now driven by Streamlit numbers
-    PHASE_DURATIONS = {
-        'Adsorption': adsorption,
-        'Evacuation': evacuation,
-        'NCG Purging': ncg,
-        'Heating': heating,
-        'CO2 Purging': co2,
-        'Cooling': cool
-    }
+    enforce_evac_cool = st.checkbox("Evacuation Overrides Cooling", value=True)
 
     # --- Fixed Constants ---
     TOTAL_MINUTES = target_time # 24 hours * 60 minutes
-    TOTAL_MODULES = len(MODULES) # Number of module groups
+    TOTAL_MODULES = int(total_modules)
+    MODULES = list(range(1, TOTAL_MODULES + 1))
+    MODULE_LABELS = [f"M{m}" for m in MODULES]
 
-    # Simulate steam demands (kg/hr per module running that phase)
-    steam_demand_per_phase = {
-        'NCG Purging': 150,
-        'Heating': 150,
-        'CO2 Purging': 150
-    }
+    GROUP_IDS = ["A", "B"]
+    GROUP_OF = {m: ("A" if m % 2 == 1 else "B") for m in MODULES}
+
+    def adjusted_duration(phase, base_duration):
+        return int(base_duration)
 
     # Idle time required between specific phase transitions (in minutes)
     PHASE_GAPS = {
@@ -1080,71 +867,145 @@ with tab5:
         ('Heating', 'CO2 Purging'): 0
     }
 
-    # Define target steam limit globally so it's always available
-    target_steam_limit_kg_hr =  target_st # Your target steam limit in kg/hr
-    target_steam_limit_kg_min = target_steam_limit_kg_hr / 60.0
-
-    # --- Resource Limits will depend on desorption_mode ---
-    RESOURCE_LIMITS = {}
-    if desorption_mode == "Interleaved":
-        for phase in PHASES:
-            RESOURCE_LIMITS[phase] = TOTAL_MODULES
-    else: # Serialized mode
-        for phase in PHASES:
-            if phase in DESORPTION_PHASES:
-                RESOURCE_LIMITS[phase] = 1 # Only one module in any desorption phase at a time
-            else:
-                RESOURCE_LIMITS[phase] = TOTAL_MODULES # Adsorption can be interleaved
+    # --- Resource Limits: Adsorption from input; others for display (shared caps for bottleneck report) ---
+    adsorption_cap = min(int(adsorption_capacity), TOTAL_MODULES)
+    RESOURCE_LIMITS = {
+        "Adsorption": adsorption_cap,
+        "Evacuation": shared_evac_cooling_cap,
+        "NCG Purging": shared_purge_heat_co2_cap,
+        "Heating": shared_purge_heat_co2_cap,
+        "CO2 Purging": shared_purge_heat_co2_cap,
+        "Cooling": shared_evac_cooling_cap,
+    }
 
     selected_delay = 0 # Default value, will be updated based on user choice
 
+    def build_module_delays(offset, group_ids, group_of):
+        group_index = {g: i for i, g in enumerate(group_ids)}
+        return {m: group_index[group_of[m]] * offset for m in MODULES}
+
+
 
     # --- Core Simulation Function ---
-    def run_simulation(module_delays_config, phase_durations_config, resource_limits_config, current_desorption_mode):
-        """
-        Runs the scheduling simulation with given module delays and returns
-        the generated schedule, the total steam demand profile, and resource usage.
-        """
+    def run_simulation(module_delays_config, phase_durations_config, resource_limits_config, current_desorption_mode, group_ids, group_of, phase_durations_by_group=None, concurrent_desorption_cap=1, shared_evac_cooling_cap=1, shared_purge_heat_co2_cap=1, modules_to_run=None, baseline_mode=False):
+        """Runs scheduling simulation; returns schedule, resource_usage, evac/cool stats.
+        modules_to_run: optional list of module IDs (default: all MODULES).
+        baseline_mode: if True, no shared resource constraints—each phase has its own capacity."""
+        modules = modules_to_run if modules_to_run is not None else list(MODULES)
         resource_usage = {phase: np.zeros(TOTAL_MINUTES, dtype=int) for phase in PHASES}
-        module_timers = {mod: 0 for mod in MODULES}
+        module_timers = {mod: 0 for mod in modules}
+        evac_cool_stats = {
+            "cooling_delay_events": 0,
+            "cooling_delay_minutes": 0,
+            "evac_delay_events": 0,
+            "evac_delay_minutes": 0
+        }
 
-        for mod, delay in module_delays_config.items():
-            module_timers[mod] = delay
+        for mod in modules:
+            module_timers[mod] = module_delays_config.get(mod, 0)
         
         schedule = []
-        
-        desorption_lock_time = 0 
+        # When per-group durations are off, fix Adsorption to same value for all modules
+        adsorption_dur_uniform = int(phase_durations_config["Adsorption"]) if not phase_durations_by_group else None
 
         def can_allocate_internal(phase, start, duration, current_resource_state):
             end_time = start + duration
-            if end_time > TOTAL_MINUTES:
+            if end_time > TOTAL_MINUTES or start < 0:
                 return False
-            return np.all(current_resource_state[phase][start : end_time] < resource_limits_config[phase])
+            end_safe = min(end_time, TOTAL_MINUTES)  # clamp for array bounds (indices 0..TOTAL_MINUTES-1)
+            # Adsorption: always per-phase capacity from table
+            if phase == "Adsorption":
+                return bool(np.all(current_resource_state[phase][start:end_safe] < resource_limits_config[phase]))
+            # Baseline mode: no sharing—each phase has its own capacity
+            if baseline_mode and current_desorption_mode == "Interleaved":
+                if phase in ("Evacuation", "Cooling"):
+                    return bool(np.all(current_resource_state[phase][start:end_safe] < shared_evac_cooling_cap))
+                if phase in ("NCG Purging", "Heating", "CO2 Purging"):
+                    return bool(np.all(current_resource_state[phase][start:end_safe] < shared_purge_heat_co2_cap))
+                return True
+            # Interleaved: shared resource groups
+            if current_desorption_mode == "Interleaved":
+                if phase in ("Evacuation", "Cooling"):
+                    evac_cool_phases = ("Evacuation", "Cooling")
+                    for t in range(start, end_safe):
+                        combined = sum(current_resource_state[p][t] for p in evac_cool_phases)
+                        if combined >= shared_evac_cooling_cap:
+                            return False
+                    return True
+                if phase in ("NCG Purging", "Heating", "CO2 Purging"):
+                    purge_heat_co2_phases = ("NCG Purging", "Heating", "CO2 Purging")
+                    for t in range(start, end_safe):
+                        combined = sum(current_resource_state[p][t] for p in purge_heat_co2_phases)
+                        if combined >= shared_purge_heat_co2_cap:
+                            return False
+                    return True
+            # Concurrent: per-phase caps ignored for desorption phases; concurrent_desorption_cap gates Evacuation start
+            if current_desorption_mode == "Concurrent" and phase == "Evacuation":
+                desorption_phases_plus_cooling = list(DESORPTION_PHASES) + ["Cooling"]
+                for t in range(start, end_safe):
+                    total_in_desorption = sum(current_resource_state[p][t] for p in desorption_phases_plus_cooling)
+                    if total_in_desorption >= concurrent_desorption_cap:
+                        return False
+            return True
 
         def reserve_internal(phase, start, duration, current_resource_state):
             end_time = start + duration
-            current_resource_state[phase][start : end_time] += 1
+            end_safe = min(end_time, TOTAL_MINUTES)
+            current_resource_state[phase][start:end_safe] += 1
+
+        def evac_cool_conflict_internal(phase, start, duration, current_resource_state):
+            if baseline_mode or current_desorption_mode != "Interleaved":
+                return False
+            end_time = start + duration
+            end_safe = min(end_time, TOTAL_MINUTES)
+            # enforce_evac_cool: Evacuation overrides Cooling (Cooling pauses). Only Cooling waits.
+            # When off: No interruption—both block each other; whoever started first runs to completion.
+            if phase == "Cooling":
+                return np.any(current_resource_state["Evacuation"][start:end_safe] > 0)
+            if phase == "Evacuation":
+                return False if enforce_evac_cool else np.any(current_resource_state["Cooling"][start:end_safe] > 0)
+            return False
         
+        # Respect group pairings (odd=Group A, even=Group B): process Group A first, then Group B
+        mod_order = sorted(modules, key=lambda m: (group_of.get(m, "A") != "A", m))
         progress_made = True
         while progress_made:
             progress_made = False
-            for mod in MODULES:
+            for mod in mod_order:
                 t = module_timers[mod]
                 cycle_phases = []
+                group_id = group_of[mod]
                 
                 temp_resource_usage_for_cycle = {phase: np.copy(resource_usage[phase]) for phase in PHASES}
-
                 cycle_success = True
                 
                 for phase in PHASES:
-                    duration = phase_durations_config[phase]
-                    
-                    if current_desorption_mode == "Serialized" and phase in DESORPTION_PHASES:
-                        t = max(t, desorption_lock_time)
+                    if phase == "Adsorption" and adsorption_dur_uniform is not None:
+                        duration = adsorption_dur_uniform
+                    else:
+                        base_dur = phase_durations_by_group[group_id][phase] if phase_durations_by_group else phase_durations_config[phase]
+                        duration = adjusted_duration(phase, base_dur)
 
                     attempt_start = t
+                    conflict_hit = False
                     while attempt_start + duration <= TOTAL_MINUTES:
-                        if can_allocate_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle):
+                        if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle):
+                            if phase == "Cooling":
+                                if not conflict_hit:
+                                    evac_cool_stats["cooling_delay_events"] += 1
+                                    conflict_hit = True
+                                evac_cool_stats["cooling_delay_minutes"] += 1
+                            elif phase == "Evacuation":
+                                if not conflict_hit:
+                                    evac_cool_stats["evac_delay_events"] += 1
+                                    conflict_hit = True
+                                evac_cool_stats["evac_delay_minutes"] += 1
+                            attempt_start += 1
+                            continue
+                        if can_allocate_internal(
+                            phase, attempt_start, duration,
+                            temp_resource_usage_for_cycle
+                        ):
                             break
                         attempt_start += 1
                     
@@ -1152,13 +1013,13 @@ with tab5:
                         cycle_success = False
                         break
 
-                    reserve_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle)
+                    reserve_internal(
+                        phase, attempt_start, duration,
+                        temp_resource_usage_for_cycle
+                    )
                     cycle_phases.append((phase, attempt_start, attempt_start + duration))
                     
                     t = attempt_start + duration
-
-                    if current_desorption_mode == "Serialized" and phase == 'Cooling':
-                        desorption_lock_time = max(desorption_lock_time, t)
 
                     next_index = PHASES.index(phase) + 1
                     if next_index < len(PHASES):
@@ -1169,183 +1030,488 @@ with tab5:
                 if cycle_success:
                     for phase_name in PHASES:
                         resource_usage[phase_name] = np.copy(temp_resource_usage_for_cycle[phase_name])
-                    
                     for phase, start, end in cycle_phases:
                         schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
                     module_timers[mod] = t
                     progress_made = True
                 
         df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start']).reset_index(drop=True)
-
-        # --- CORRECTED STEAM CALCULATION ---
-        # We build the profile in kg/hr for each minute, then scale it correctly
-        steam_breakdown_kg_per_hr = pd.DataFrame(0.0, index=range(TOTAL_MINUTES), columns=steam_demand_per_phase.keys())
-        for _, row in df_schedule.iterrows():
-            if row['Phase'] in steam_demand_per_phase:
-                steam_per_hr = steam_demand_per_phase[row['Phase']]
-                for t_idx in range(row['Start'], row['End']):
-                    if t_idx < TOTAL_MINUTES:
-                        steam_breakdown_kg_per_hr.loc[t_idx, row['Phase']] += steam_per_hr
-
-        # Sum across phases to get total kg/hr demand per minute
-        # No division by 60 here, the values are correctly in kg/hr
-        steam_profile = steam_breakdown_kg_per_hr.sum(axis=1)
-
-        return df_schedule, steam_profile, resource_usage
+        return df_schedule, resource_usage, evac_cool_stats
 
 
     # --- Main Run Button ---
+    st.subheader("Results")
     st.markdown("---")
     if st.button("Generate Schedule and Analyze"):
         final_delay_to_use = 0
         optimization_summary_df = None
 
-        if delay_method == 'Automatic':
-            st.info("Running optimization to find the best delay...")
-            
-            best_delay = 0
-            min_peak_steam = float('inf')
-            min_peak_duration = TOTAL_MINUTES
-            
-            delay_search_range = range(0, 120, 2)
-            
-            optimization_results = []
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+        def count_complete_cycles_df(df_schedule):
+            cycle_counts = []
+            for mod in MODULES:
+                mod_df = df_schedule[df_schedule["Module"] == mod].sort_values(by="Start").reset_index(drop=True)
+                count = 0
+                i = 0
+                while i <= len(mod_df) - len(PHASES):
+                    window = mod_df.iloc[i:i+len(PHASES)]
+                    if list(window["Phase"]) == PHASES:
+                        count += 1
+                        i += len(PHASES)
+                    else:
+                        i += 1
+                cycle_counts.append({"Module": mod, "Complete Cycles": count})
+            df_cycles = pd.DataFrame(cycle_counts)
+            df_cycles["Module"] = df_cycles["Module"].apply(lambda m: f"M{m}")
+            return df_cycles
 
-            for i, delay in enumerate(delay_search_range):
-                current_module_delays_for_opt = {
-                    'M1&M3': 0,
-                    'M2&M4': delay
-                }
+        if DELAY_METHOD == 'Automatic':
+            st.info("Running optimization to find the best delay (both modes)...")
 
-                _, current_steam_profile, _ = run_simulation(
-                    current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, desorption_mode
-                )
-                
-                # current_steam_profile is already in kg/hr from the corrected simulation, so no need to multiply by 60
-                current_peak_steam_hr = current_steam_profile.max()
+            def optimize_offsets(group_ids, group_of):
+                best_delay = 0
+                best_cycles_int = -1
+                delay_search_range = range(0, OPT_MAX_DELAY + 1, OPT_STEP)
+                optimization_results = []
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
-                # Now, `target_steam_limit_kg_hr` is the correct unit to compare against
-                duration_above_target = (current_steam_profile > target_steam_limit_kg_hr).sum()
+                for i, delay in enumerate(delay_search_range):
+                    current_module_delays_for_opt = build_module_delays(delay, group_ids, group_of)
+                    schedule_int, _, _ = run_simulation(
+                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+                    )
+                    schedule_conc, _, _ = run_simulation(
+                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+                    )
+                    cycles_int = int(count_complete_cycles_df(schedule_int)["Complete Cycles"].sum())
+                    cycles_conc = int(count_complete_cycles_df(schedule_conc)["Complete Cycles"].sum())
+                    optimization_results.append({'Delay_Group_B': delay, 'Interleaved_Cycles': cycles_int, 'Concurrent_Cycles': cycles_conc})
+                    if cycles_int > best_cycles_int:
+                        best_cycles_int = cycles_int
+                        best_delay = delay
+                    progress_bar.progress((i + 1) / len(delay_search_range))
+                    status_text.text(f"Testing offset: {delay} min. Interleaved: {cycles_int}, Concurrent: {cycles_conc}")
 
-                optimization_results.append({
-                    'Delay_M2&M4': delay,
-                    'Peak_Steam_kg_per_hr': current_peak_steam_hr,
-                    'Duration_Above_Target_min': duration_above_target
-                })
-                
-                if current_peak_steam_hr < min_peak_steam:
-                    min_peak_steam = current_peak_steam_hr
-                    best_delay = delay
-                    min_peak_duration = duration_above_target
-                elif current_peak_steam_hr == min_peak_steam and duration_above_target < min_peak_duration:
-                    min_peak_duration = duration_above_target
-                    best_delay = delay
-                    
-                progress_bar.progress((i + 1) / len(delay_search_range))
-                status_text.text(f"Testing delay: {delay} minutes. Current Peak: {current_peak_steam_hr:.2f} kg/hr")
+                return best_delay, pd.DataFrame(optimization_results)
 
-            st.success(f"Optimization Complete!")
-            st.write(f"**Optimal Delay for 'M2&M4' found: {best_delay} minutes** (Peak Steam: {min_peak_steam:.2f} kg/hr)")
+            best_delay, optimization_summary_df = optimize_offsets(GROUP_IDS, GROUP_OF)
+            st.success("Optimization Complete!")
+            st.write(f"**Optimal Group Offset: {best_delay} minutes** (optimized for Interleaved)")
             final_delay_to_use = best_delay
-            optimization_summary_df = pd.DataFrame(optimization_results)
         
-        # --- Run the final simulation with the determined delay ---
+        else:
+            # Manual: set MANUAL_DELAY in code
+            MANUAL_DELAY = 62
+            final_delay_to_use = MANUAL_DELAY
+
+        # --- Run both simulations with the determined delay ---
         st.markdown("---")
-        actual_module_delays = {
-            'M1&M3': 0,
-            'M2&M4': final_delay_to_use
-        }
+        actual_module_delays = build_module_delays(final_delay_to_use, GROUP_IDS, GROUP_OF)
         
-        optimal_schedule_df, optimal_steam_profile, optimal_resource_usage = run_simulation(
-            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, desorption_mode
+        schedule_int, resource_usage_int, conflicts_int = run_simulation(
+            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+        )
+        schedule_conc, resource_usage_conc, _ = run_simulation(
+            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
         )
 
-        if optimization_summary_df is not None:
-            st.subheader("Optimization Results by Delay")
-            st.dataframe(optimization_summary_df)
+        cycle_counts_int = count_complete_cycles_df(schedule_int)
+        cycle_counts_conc = count_complete_cycles_df(schedule_conc)
+        cycles_int = int(cycle_counts_int["Complete Cycles"].sum())
+        cycles_conc = int(cycle_counts_conc["Complete Cycles"].sum())
 
-        st.subheader("Complete Cycles")
-        completed_cooling_phases = optimal_schedule_df[optimal_schedule_df['Phase'] == 'Cooling']
-        cycle_counts = completed_cooling_phases.groupby('Module').size().reset_index(name='Complete Cycles')
+        # Baseline run (Group A only, no resource sharing)
+        modules_A = [m for m in MODULES if GROUP_OF[m] == "A"]
+        baseline_delays = {m: 0 for m in modules_A}
+        schedule_baseline, _, _ = run_simulation(
+            baseline_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", GROUP_IDS, GROUP_OF,
+            phase_durations_by_group=PHASE_DURATIONS_BY_GROUP,
+            shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap,
+            modules_to_run=modules_A, baseline_mode=True
+        )
+        cycle_counts_baseline = count_complete_cycles_df(schedule_baseline)
+        cycles_baseline = int(cycle_counts_baseline["Complete Cycles"].sum())
 
-        all_modules_df = pd.DataFrame(MODULES, columns=['Module'])
-        cycle_counts = pd.merge(all_modules_df, cycle_counts, on='Module', how='left').fillna(0)
-        cycle_counts['Complete Cycles'] = cycle_counts['Complete Cycles'].astype(int)
-        
-        st.dataframe(cycle_counts)
+        # Cycle count per group: average cycles per module (Baseline, Concurrent, Interleaved)
+        res_col1, res_col2, res_col3 = st.columns(3)
+        with res_col1:
+            st.subheader("Baseline")
+            group_cycle_rows = []
+            for gid in GROUP_IDS:
+                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
+                if gid == "A":
+                    cycles = cycle_counts_baseline[cycle_counts_baseline["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
+                    avg_cycles = round(cycles.mean(), 1) if len(cycles) > 0 else 0
+                else:
+                    avg_cycles = "—"
+                group_cycle_rows.append({"Group": gid, "Avg Cycles per Module": avg_cycles})
+            st.dataframe(pd.DataFrame(group_cycle_rows), use_container_width=True, hide_index=True)
+            st.metric("Total Cycles", cycles_baseline)
+        with res_col2:
+            st.subheader("Concurrent")
+            group_cycle_rows = []
+            for gid in GROUP_IDS:
+                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
+                cycles = cycle_counts_conc[cycle_counts_conc["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
+                avg_cycles = round(cycles.mean(), 1) if len(cycles) > 0 else 0
+                group_cycle_rows.append({"Group": gid, "Avg Cycles per Module": avg_cycles})
+            st.dataframe(pd.DataFrame(group_cycle_rows), use_container_width=True, hide_index=True)
+            st.metric("Total Cycles", cycles_conc)
+        with res_col3:
+            st.subheader("Interleaved")
+            group_cycle_rows = []
+            for gid in GROUP_IDS:
+                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
+                cycles = cycle_counts_int[cycle_counts_int["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
+                avg_cycles = round(cycles.mean(), 1) if len(cycles) > 0 else 0
+                group_cycle_rows.append({"Group": gid, "Avg Cycles per Module": avg_cycles})
+            st.dataframe(pd.DataFrame(group_cycle_rows), use_container_width=True, hide_index=True)
+            st.metric("Total Cycles", cycles_int)
 
-        # === Gantt Chart with Steam Demand (using optimal results) ===
-        colors = {
+        # Complete Cycles (per module): Baseline, Concurrent, Interleaved
+        with st.expander("Complete Cycles (per module)"):
+            cc_col1, cc_col2, cc_col3 = st.columns(3)
+            with cc_col1:
+                st.caption("Baseline (Group A only)")
+                st.dataframe(cycle_counts_baseline)
+            with cc_col2:
+                st.caption("Concurrent")
+                st.dataframe(cycle_counts_conc)
+            with cc_col3:
+                st.caption("Interleaved")
+                st.dataframe(cycle_counts_int)
+
+        # === Baseline Analysis ===
+        st.markdown("### Baseline Analysis")
+        st.caption("Group A only (no resource sharing) compared against Group A + B Concurrent and Interleaved")
+        inc_int = cycles_int - cycles_baseline
+        inc_conc = cycles_conc - cycles_baseline
+        bl_col1, bl_col2, bl_col3 = st.columns(3)
+        with bl_col1:
+            st.metric("Group A only (baseline)", cycles_baseline, help="Group A modules, Group A phase durations, each phase has its own capacity—no shared resource constraints")
+        with bl_col2:
+            st.metric("Group A + B Concurrent", cycles_conc, delta=inc_conc, help="All modules with Concurrent desorption cap")
+        with bl_col3:
+            st.metric("Group A + B Interleaved", cycles_int, delta=inc_int, help="All modules with Interleaved shared resource constraints")
+
+        # === Gantt Charts (both modes) ===
+        st.markdown("### Schedule Gantt Charts")
+        colors_interleaved = {
             'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
             'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'
         }
+        colors_concurrent = {
+            'Adsorption': '#4B9CD3',
+            'Evacuation': '#90EE90', 'NCG Purging': '#90EE90', 'Heating': '#90EE90',
+            'CO2 Purging': '#90EE90', 'Cooling': '#90EE90'
+        }
+        mod_to_y = {m: i for i, m in enumerate(MODULES)}
+        bar_height = 0.8
+        desorption_set = DESORPTION_PHASES | {'Cooling'}
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9), sharex=True,
-                                        gridspec_kw={'height_ratios': [2, 1]})
+        def draw_gantt(ax, plot_df, colors, is_concurrent, title):
+            plot_df = plot_df.copy()
+            plot_df['Module'] = pd.Categorical(plot_df['Module'], categories=MODULES, ordered=True)
+            plot_df = plot_df.sort_values(['Module', 'Start'])
+            if is_concurrent:
+                def merge_contiguous(segments):
+                    if not segments:
+                        return []
+                    merged = [list(segments[0])]
+                    for s, w in segments[1:]:
+                        if merged[-1][0] + merged[-1][1] == s:
+                            merged[-1][1] += w
+                        else:
+                            merged.append([s, w])
+                    return [(s, w) for s, w in merged]
+                for mod in MODULES:
+                    mod_df = plot_df[plot_df['Module'] == mod]
+                    y_pos = mod_to_y.get(mod, min(mod - 1, len(MODULES) - 1))
+                    yrange = (y_pos - bar_height / 2, bar_height)
+                    des_segments = []
+                    ads_segments = []
+                    for _, row in mod_df.iterrows():
+                        start = max(0, row['Start'])
+                        end = min(TOTAL_MINUTES, row['End'])
+                        if start >= end:
+                            continue
+                        seg = (start, end - start)
+                        if row['Phase'] == 'Adsorption':
+                            ads_segments.append(seg)
+                        elif row['Phase'] in desorption_set:
+                            des_segments.append(seg)
+                    des_segments = merge_contiguous(des_segments)
+                    if des_segments:
+                        ax.broken_barh(des_segments, yrange, facecolors=colors['Evacuation'],
+                                       edgecolors=colors['Evacuation'], linewidths=0.5, zorder=1)
+                    if ads_segments:
+                        ax.broken_barh(ads_segments, yrange, facecolors=colors['Adsorption'],
+                                       edgecolors=colors['Adsorption'], linewidths=0.5, zorder=10)
+            else:
+                for _, row in plot_df.iterrows():
+                    start = max(0, row['Start'])
+                    end = min(TOTAL_MINUTES, row['End'])
+                    if start >= end:
+                        continue
+                    mod = int(row['Module']) if row['Module'] is not None else 1
+                    y_pos = mod_to_y.get(mod, min(mod - 1, len(MODULES) - 1))
+                    c = colors.get(row['Phase'], colors['Adsorption'])
+                    ax.barh(y_pos, end - start, left=start, height=bar_height, color=c, edgecolor='black')
+            ax.set_yticks(range(len(MODULES)))
+            ax.set_yticklabels([f"M{m}" for m in MODULES])
+            ax.set_ylabel('Module')
+            ax.set_xlabel('Time (minutes)')
+            ax.set_title(title)
+            ax.set_xlim(0, TOTAL_MINUTES)
+            ax.invert_yaxis()
+            if is_concurrent:
+                legend_handles = [plt.Rectangle((0,0),1,1,color=colors['Adsorption']), plt.Rectangle((0,0),1,1,color=colors['Evacuation'])]
+                legend_labels = ['Adsorption', 'Desorption (locked)']
+            else:
+                legend_handles = [plt.Rectangle((0,0),1,1,color=c) for c in colors.values()]
+                legend_labels = list(colors.keys())
+            ax.legend(legend_handles, legend_labels, loc='upper right', fontsize=8)
 
-        optimal_schedule_df['Module'] = pd.Categorical(optimal_schedule_df['Module'], categories=MODULES, ordered=True)
-        optimal_schedule_df = optimal_schedule_df.sort_values('Module')
+        gantt_col1, gantt_col2 = st.columns(2)
+        fig_height = max(8, len(MODULES) * 0.5)
+        with gantt_col1:
+            fig1, ax1 = plt.subplots(figsize=(12, fig_height))
+            draw_gantt(ax1, schedule_conc, colors_concurrent, True, f'Concurrent (Delay: {final_delay_to_use} min)')
+            plt.tight_layout()
+            st.pyplot(fig1)
+        with gantt_col2:
+            fig2, ax2 = plt.subplots(figsize=(12, fig_height))
+            draw_gantt(ax2, schedule_int, colors_interleaved, False, f'Interleaved (Delay: {final_delay_to_use} min)')
+            plt.tight_layout()
+            st.pyplot(fig2)
 
-        for _, row in optimal_schedule_df.iterrows():
-            ax1.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
-                    color=colors[row['Phase']], edgecolor='black')
-
-        ax1.set_ylabel('Module')
-        ax1.set_title(f'Process Schedule (M2&M4 Delay: {final_delay_to_use} min, Mode: {desorption_mode})')
-        ax1.set_xlim(0, TOTAL_MINUTES)
-        ax1.set_yticks(MODULES)
-        ax1.set_yticklabels(MODULES)
-        ax1.invert_yaxis()
-        ax1.legend([plt.Rectangle((0,0),1,1,color=c) for c in colors.values()], colors.keys(), loc='upper right', fontsize=8)
-
-        # Plot steam demand line
-        ax2.plot(optimal_steam_profile.index, optimal_steam_profile.values, color='red', linewidth=2, label='Total Steam Demand') 
-        ax2.axhline(target_steam_limit_kg_hr, color='blue', linestyle='--', label=f'Target Limit ({target_steam_limit_kg_hr} kg/hr)')
-        ax2.set_title('Steam Demand (kg/hr)')
-        ax2.set_ylabel('Steam Demand (kg/hr)')
-        ax2.set_xlabel('Time (minutes)')
-        ax2.grid(True)
-        ax2.legend()
-
+        # === Baseline vs Concurrent vs Interleaved Comparison ===
+        st.markdown("### Baseline vs Concurrent vs Interleaved Comparison")
+        target_pct = 80  # % increase over baseline
+        pct_conc_vs_baseline = ((cycles_conc - cycles_baseline) / cycles_baseline * 100) if cycles_baseline > 0 else 0
+        pct_int_vs_baseline = ((cycles_int - cycles_baseline) / cycles_baseline * 100) if cycles_baseline > 0 else 0
+        comp_col1, comp_col2, comp_col3 = st.columns(3)
+        with comp_col1:
+            st.metric("Baseline (Group A only)", f"{cycles_baseline} cycles", "no resource sharing")
+        with comp_col2:
+            delta_conc = f"+{pct_conc_vs_baseline:.1f}%" if pct_conc_vs_baseline >= 0 else f"{pct_conc_vs_baseline:.1f}%"
+            st.metric("Concurrent (A+B)", f"{cycles_conc} cycles", delta_conc)
+        with comp_col3:
+            delta_int = f"+{pct_int_vs_baseline:.1f}%" if pct_int_vs_baseline >= 0 else f"{pct_int_vs_baseline:.1f}%"
+            st.metric("Interleaved (A+B)", f"{cycles_int} cycles", delta_int)
+        # Bar chart
+        fig_comp, ax_comp = plt.subplots(figsize=(8, 3))
+        bars = ax_comp.bar(["Baseline (A only)", "Concurrent (A+B)", "Interleaved (A+B)"],
+                           [cycles_baseline, cycles_conc, cycles_int],
+                           color=["#95a5a6", "#6C5CE7", "#E07C5E"], alpha=0.85, edgecolor="black")
+        ax_comp.set_ylabel("Total Complete Cycles")
+        ax_comp.set_title(f"Output comparison (target: ≥{target_pct}% increase over baseline)")
+        for b in bars:
+            ax_comp.annotate(f"{int(b.get_height())}", xy=(b.get_x() + b.get_width()/2, b.get_height()),
+                             ha="center", va="bottom", fontsize=12)
+        ax_comp.set_ylim(0, max(cycles_baseline, cycles_int, cycles_conc) * 1.2)
         plt.tight_layout()
-        st.pyplot(fig)
-        
-        # === Power Demand Profile (using optimal_resource_usage from the best simulation) ===
-        st.markdown("---")
-        st.subheader("Power Demand Profile")
+        st.pyplot(fig_comp)
+        plt.close(fig_comp)
+        met_conc = pct_conc_vs_baseline >= target_pct
+        met_int = pct_int_vs_baseline >= target_pct
+        if met_int and met_conc:
+            st.success(f"✅ Both Concurrent and Interleaved achieve ≥{target_pct}% increase over baseline")
+        elif met_int:
+            st.success(f"✅ Interleaved achieves ≥{target_pct}% increase over baseline. Concurrent: {pct_conc_vs_baseline:.1f}%")
+        elif met_conc:
+            st.success(f"✅ Concurrent achieves ≥{target_pct}% increase over baseline. Interleaved: {pct_int_vs_baseline:.1f}%")
+        else:
+            st.warning(f"⚠️ Neither meets the {target_pct}% target. Concurrent: {pct_conc_vs_baseline:.1f}%, Interleaved: {pct_int_vs_baseline:.1f}%")
 
-        power_profile = np.zeros(TOTAL_MINUTES)
-        for t in range(TOTAL_MINUTES):
-            active_rows = optimal_schedule_df[(optimal_schedule_df['Start'] <= t) & (optimal_schedule_df['End'] > t)]
-            adsorption_active_modules = active_rows[active_rows['Phase'] == 'Adsorption']
-            power_profile[t] += len(adsorption_active_modules) * fan_power
-            desorption_active_at_t = False
-            for phase in DESORPTION_PHASES:
-                if phase in active_rows['Phase'].values:
-                    desorption_active_at_t = True
-                    break
-            if desorption_active_at_t:
-                power_profile[t] += boiler_power + vpump + ctower
+        st.markdown("### Evacuation/Cooling (Interleaved)")
+        cool_ev = conflicts_int['cooling_delay_events']
+        cool_min = conflicts_int['cooling_delay_minutes']
+        evac_ev = conflicts_int['evac_delay_events']
+        evac_min = conflicts_int['evac_delay_minutes']
+        total_delay_min = cool_min + evac_min
+        pct_lost = round(100 * total_delay_min / TOTAL_MINUTES, 2) if TOTAL_MINUTES > 0 else 0
+        avg_cool = round(cool_min / cool_ev, 1) if cool_ev > 0 else 0
+        avg_evac = round(evac_min / evac_ev, 1) if evac_ev > 0 else 0
+        if enforce_evac_cool:
+            st.caption("Evacuation overrides Cooling: Cooling can pause for Evacuation. Only Cooling delays are tracked.")
+            evac_cool_col1, evac_cool_col2 = st.columns(2)
+            with evac_cool_col1:
+                st.metric("Cooling pauses (for Evacuation)", f"{cool_min} min total", f"{cool_ev} events")
+                st.caption(f"Avg {avg_cool} min per event")
+            with evac_cool_col2:
+                st.metric("Evacuation delays", f"{evac_min} min total", f"{evac_ev} events (expected 0)")
+            st.metric("Total delay", f"{total_delay_min} min", f"{pct_lost}% of operating time")
+        else:
+            st.caption("No override: neither phase interrupts the other. Both can be delayed.")
+            evac_cool_col1, evac_cool_col2 = st.columns(2)
+            with evac_cool_col1:
+                st.metric("Cooling delays", f"{cool_min} min total", f"{cool_ev} events")
+                st.caption(f"Avg {avg_cool} min per event")
+            with evac_cool_col2:
+                st.metric("Evacuation delays", f"{evac_min} min total", f"{evac_ev} events")
+                st.caption(f"Avg {avg_evac} min per event")
+            st.metric("Total delay", f"{total_delay_min} min", f"{pct_lost}% of operating time")
+        if total_delay_min > 0:
+            severity = "High" if pct_lost > 5 else ("Medium" if pct_lost > 1 else "Low")
+            st.info(
+                f"**{severity} impact.** Shared resource between Evacuation and Cooling. "
+                "Consider adjusting group offset or capacity to reduce conflicts."
+            )
+        else:
+            st.success("No Evacuation/Cooling conflicts — schedule ran without delays.")
 
-        peak_power = np.max(power_profile)
-        peak_time = int(np.argmax(power_profile))
+        # Diagnostic: Adsorption durations by module
+        ads_df = schedule_int[schedule_int["Phase"] == "Adsorption"].copy()
+        if len(ads_df) > 0:
+            ads_df["Duration"] = ads_df["End"] - ads_df["Start"]
+            ads_summary = ads_df.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
+            expected = int(PHASE_DURATIONS["Adsorption"])
+            with st.expander("Schedule diagnostic: Adsorption durations by module"):
+                diag_col1, diag_col2 = st.columns(2)
+                with diag_col1:
+                    st.caption("Interleaved")
+                    st.dataframe(ads_summary, use_container_width=True, hide_index=True)
+                    deviants_int = ads_summary[(ads_summary["min"] != expected) | (ads_summary["max"] != expected)]
+                    if len(deviants_int) > 0 and grp_a == grp_b:
+                        st.warning(f"Modules {list(deviants_int.index)} have Adsorption ≠ {expected} min")
+                with diag_col2:
+                    st.caption("Concurrent")
+                    ads_conc = schedule_conc[schedule_conc["Phase"] == "Adsorption"].copy()
+                    if len(ads_conc) > 0:
+                        ads_conc["Duration"] = ads_conc["End"] - ads_conc["Start"]
+                        ads_conc_summary = ads_conc.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
+                        st.dataframe(ads_conc_summary, use_container_width=True, hide_index=True)
+                        deviants_conc = ads_conc_summary[(ads_conc_summary["min"] != expected) | (ads_conc_summary["max"] != expected)]
+                        if len(deviants_conc) > 0 and grp_a == grp_b:
+                            st.warning(f"Modules {list(deviants_conc.index)} have Adsorption ≠ {expected} min")
+                st.caption("All modules should show the same min/max when 'Different phase durations per group' is off.")
+                st.download_button("Download Concurrent schedule (CSV)", schedule_conc.to_csv(index=False), file_name="schedule_concurrent.csv", mime="text/csv", key="dl_schedule_conc")
+                st.download_button("Download Interleaved schedule (CSV)", schedule_int.to_csv(index=False), file_name="schedule_interleaved.csv", mime="text/csv", key="dl_schedule_int")
 
-        st.markdown(f"**Peak Power Demand:** {peak_power:.2f} kW at **{peak_time} minutes**")
+        # === Module Utilisation & Idle Time ===
+        def compute_module_metrics(schedule_df):
+            """Returns DataFrame with Module, Active (min), Idle (min), Adsorption (min), Utilisation %, Adsorption Utilisation %."""
+            rows = []
+            for mod in MODULES:
+                mod_df = schedule_df[schedule_df["Module"] == mod]
+                if len(mod_df) == 0:
+                    rows.append({"Module": f"M{mod}", "Active (min)": 0, "Idle (min)": TOTAL_MINUTES, "Adsorption (min)": 0, "Utilisation %": 0, "Adsorption Utilisation %": 0})
+                    continue
+                active = int((mod_df["End"] - mod_df["Start"]).sum())
+                ads_df = mod_df[mod_df["Phase"] == "Adsorption"]
+                ads_time = int((ads_df["End"] - ads_df["Start"]).sum()) if len(ads_df) > 0 else 0
+                idle = max(0, TOTAL_MINUTES - active)
+                rows.append({
+                    "Module": f"M{mod}",
+                    "Active (min)": active,
+                    "Idle (min)": idle,
+                    "Adsorption (min)": ads_time,
+                    "Utilisation %": round(100 * active / TOTAL_MINUTES, 1),
+                    "Adsorption Utilisation %": round(100 * ads_time / TOTAL_MINUTES, 1),
+                })
+            return pd.DataFrame(rows)
 
-        fig_power, ax_power = plt.subplots(figsize=(15, 3))
-        ax_power.plot(power_profile, color='purple', label='Power Demand')
-        ax_power.axvline(peak_time, color='blue', linestyle='--', label=f'Peak @ {peak_time} min ({peak_power:.2f} kW)')
-        ax_power.set_xlabel("Time (minutes)")
-        ax_power.set_ylabel("Power (kW)")
-        ax_power.set_title("Real-Time Power Demand")
-        ax_power.legend()
-        ax_power.grid(True)
+        st.markdown("### Module Utilisation & Idle Time")
+        util_int = compute_module_metrics(schedule_int)
+        util_conc = compute_module_metrics(schedule_conc)
+        with st.expander("Module utilisation tables (Active, Idle, Adsorption %)"):
+            util_col1, util_col2 = st.columns(2)
+            with util_col1:
+                st.caption("Concurrent")
+                st.dataframe(util_conc, use_container_width=True, hide_index=True)
+            with util_col2:
+                st.caption("Interleaved")
+                st.dataframe(util_int, use_container_width=True, hide_index=True)
+            st.caption("Active = time in any phase. Idle = waiting/unused time.")
+
+        # Distinct colors for Interleaved vs Concurrent (not Adsorption/Desorption)
+        color_interleaved = "#E07C5E"
+        color_concurrent = "#6C5CE7"
+        # Utilisation bar chart (side by side) with value labels
+        fig_util, ax_util = plt.subplots(figsize=(12, 4))
+        x = np.arange(len(MODULES))
+        w = 0.35
+        bars_conc = ax_util.bar(x - w/2, util_conc["Utilisation %"], w, label="Concurrent", color=color_concurrent, alpha=0.85)
+        bars_int = ax_util.bar(x + w/2, util_int["Utilisation %"], w, label="Interleaved", color=color_interleaved, alpha=0.85)
+        for bar in bars_int:
+            h = bar.get_height()
+            if h > 5:
+                ax_util.annotate(f"{h:.0f}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_interleaved)
+        for bar in bars_conc:
+            h = bar.get_height()
+            if h > 5:
+                ax_util.annotate(f"{h:.0f}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_concurrent)
+        ax_util.set_xlabel("Module")
+        ax_util.set_ylabel("Utilisation %")
+        ax_util.set_title("Module Utilisation (Active Time / Total Time)")
+        ax_util.set_xticks(x)
+        ax_util.set_xticklabels([f"M{m}" for m in MODULES])
+        ax_util.legend()
+        ax_util.set_ylim(0, 115)
         plt.tight_layout()
-        st.pyplot(fig_power)
+        st.pyplot(fig_util)
+        plt.close(fig_util)
 
-with tab3: 
+        # Idle time comparison with value labels
+        fig_idle, ax_idle = plt.subplots(figsize=(12, 4))
+        bars_idle_conc = ax_idle.bar(x - w/2, util_conc["Idle (min)"], w, label="Concurrent", color=color_concurrent, alpha=0.85)
+        bars_idle_int = ax_idle.bar(x + w/2, util_int["Idle (min)"], w, label="Interleaved", color=color_interleaved, alpha=0.85)
+        for bar in bars_idle_int:
+            h = bar.get_height()
+            if h > 2:
+                ax_idle.annotate(f"{int(h)}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_interleaved)
+        for bar in bars_idle_conc:
+            h = bar.get_height()
+            if h > 2:
+                ax_idle.annotate(f"{int(h)}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_concurrent)
+        ax_idle.set_xlabel("Module")
+        ax_idle.set_ylabel("Idle (minutes)")
+        ax_idle.set_title("Idle Time per Module (waiting / unused)")
+        ax_idle.set_xticks(x)
+        ax_idle.set_xticklabels([f"M{m}" for m in MODULES])
+        ax_idle.legend()
+        plt.tight_layout()
+        st.pyplot(fig_idle)
+        plt.close(fig_idle)
+
+        # Phase breakdown (time per phase)
+        st.markdown("### Phase Breakdown (Total Minutes per Phase)")
+        st.caption("Total minutes spent in each phase, all modules combined")
+        phase_totals_int = schedule_int.groupby("Phase").apply(lambda g: (g["End"] - g["Start"]).sum()).reindex(PHASES, fill_value=0)
+        phase_totals_conc = schedule_conc.groupby("Phase").apply(lambda g: (g["End"] - g["Start"]).sum()).reindex(PHASES, fill_value=0)
+        colors_phase = ['#4B9CD3', '#FFB347', '#FFD700', '#E97451', '#90EE90', '#9370DB']
+        pbrk_col1, pbrk_col2 = st.columns(2)
+        total_conc = phase_totals_conc.sum() or 1
+        total_int = phase_totals_int.sum() or 1
+        pct_conc = (phase_totals_conc.values / total_conc) * 100
+        pct_int = (phase_totals_int.values / total_int) * 100
+        with pbrk_col1:
+            st.caption("Concurrent")
+            fig_phase, ax_phase = plt.subplots(figsize=(6, 3.5))
+            bars_conc = ax_phase.barh(PHASES, phase_totals_conc.values, color=colors_phase[:len(PHASES)])
+            for bar, pct in zip(bars_conc, pct_conc):
+                ax_phase.annotate(f"{pct:.1f}%", xy=(bar.get_width(), bar.get_y() + bar.get_height()/2),
+                                 xytext=(5, 0), textcoords="offset points", va="center", fontsize=8)
+            ax_phase.set_xlabel("Total Minutes")
+            ax_phase.set_title("Concurrent")
+            plt.tight_layout()
+            st.pyplot(fig_phase)
+            plt.close(fig_phase)
+        with pbrk_col2:
+            st.caption("Interleaved")
+            fig_phase2, ax_phase2 = plt.subplots(figsize=(6, 3.5))
+            bars_int = ax_phase2.barh(PHASES, phase_totals_int.values, color=colors_phase[:len(PHASES)])
+            for bar, pct in zip(bars_int, pct_int):
+                ax_phase2.annotate(f"{pct:.1f}%", xy=(bar.get_width(), bar.get_y() + bar.get_height()/2),
+                                  xytext=(5, 0), textcoords="offset points", va="center", fontsize=8)
+            ax_phase2.set_xlabel("Total Minutes")
+            ax_phase2.set_title("Interleaved")
+            plt.tight_layout()
+            st.pyplot(fig_phase2)
+            plt.close(fig_phase2)
+
+with tab2:
     # === MODULES ===
     MODULES = ["M2", "M4"]
 
@@ -1386,23 +1552,12 @@ with tab3:
         'Cooling': cool_d
     }
 
-    steam_demand_per_phase = {
-        'NCG Purging': ncg_purging,
-        'Heating': heating,
-        'CO2 Purging': co2_purging
-    }
-
-    power_ratings = {
-        'Adsorption': fan_power,
-        'Evacuation': vpump,
-        'NCG Purging': boiler_power + vpump + ctower,
-        'Heating': boiler_power + vpump + ctower,
-        'CO2 Purging': boiler_power + vpump + ctower,
-        'Cooling': ctower + vpump
-    }
-
-    # === Use `delay` in your scheduling logic ===
-    module_timers = {'M2': 0, 'M4': delay_m2}
+    desorption_mode = st.radio(
+        "Desorption Strategy",
+        ('Interleaved', 'Concurrent'),
+        key='tab2_desorption_mode',
+        help="Interleaved: Multiple modules can run desorption phases in parallel. Concurrent: Limits how many pairs can be in adsorption and desorption at the same time (one-at-a-time per phase in this view)."
+    )
 
     # === RESOURCE TRACKING ===
     resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
@@ -1425,7 +1580,7 @@ with tab3:
             cycle_phases = []
             for phase in PHASES:
                 duration = PHASE_DURATIONS[phase]
-                if desorption_mode == "Serialized" and phase in DESORPTION_PHASES:
+                if desorption_mode == "Concurrent" and phase in DESORPTION_PHASES:
                     t = max(t, desorption_lock_time)
                 while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
                     t += 1
@@ -1433,7 +1588,7 @@ with tab3:
                     break
                 cycle_phases.append((phase, t, t + duration))
                 reserve(phase, t, duration)
-                if desorption_mode == "Serialized" and phase == 'Cooling':
+                if desorption_mode == "Concurrent" and phase == 'Cooling':
                     desorption_lock_time = t + duration
                 t += duration
             if len(cycle_phases) == len(PHASES):
@@ -1490,8 +1645,8 @@ with tab3:
     
     # Create legend with phases and hatching styles
     phase_legend = [plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()]
-    hatch_legend = [plt.Rectangle((0, 0), 1, 1, color='gray', edgecolor='black'),
-                    plt.Rectangle((0, 0), 1, 1, color='gray', edgecolor='black', hatch='///')]
+    hatch_legend = [plt.Rectangle((0, 0), 1, 1, facecolor='gray', edgecolor='black'),
+                    plt.Rectangle((0, 0), 1, 1, facecolor='gray', edgecolor='black', hatch='///')]
     
     # Combine legends
     all_handles = phase_legend 
@@ -1500,48 +1655,3 @@ with tab3:
     st.pyplot(fig)
 
     st.markdown("**Stage 1:** Cooling & Adsorption | **Stage 2:** Evacuation, NCG Purging, Heating, CO2 Purging")
-
-    # === Power Profile ===
-    # === Shared Power Profile (Avoid Double Counting Shared Equipment) ===
-    power_profile = np.zeros(TOTAL_MINUTES)
-
-    for t in range(TOTAL_MINUTES):
-            # Get all active rows at time t
-        active_rows = df_schedule[(df_schedule['Start'] <= t) & (df_schedule['End'] > t)]
-
-        # === Module-specific: Adsorption (can run in parallel)
-        adsorption_rows = active_rows[active_rows['Phase'] == 'Adsorption']
-        power_profile[t] += len(adsorption_rows) * fan_power
-
-        # === Shared Desorption Equipment (count once if active)
-        active_phases = active_rows['Phase'].unique()
-
-    # --- Shared equipment — only add once even if multiple modules are active ---
-        if 'Evacuation' in active_phases:
-            power_profile[t] += vpump
-
-        if any(p in ['NCG Purging', 'Heating', 'CO2 Purging'] for p in active_phases):
-            power_profile[t] += boiler_power + vpump + ctower  # shared steam equipment
-
-        if 'Cooling' in active_phases:
-            power_profile[t] += ctower + vpump  # shared again but still only once
-
-        # === Peak Demand Info ===
-    peak_power = np.max(power_profile)
-    peak_time = int(np.argmax(power_profile))
-
-    # === Plot Power Profile ===
-    st.markdown("### Power Demand Profile")
-    fig3, ax3 = plt.subplots(figsize=(15, 3))
-    ax3.plot(power_profile, color='red', label='Power Demand')
-    ax3.axvline(peak_time, color='blue', linestyle='--', label=f'Peak @ {peak_time} min')
-    ax3.set_xlabel("Time (minutes)")
-    ax3.set_ylabel("Power (kW)")
-    ax3.set_title("Real-Time Power Demand")
-    ax3.legend()
-    ax3.grid(True)
-    st.pyplot(fig3)
-
-    # Optional: Show peak value
-    st.markdown(f"*Peak Power Demand: {peak_power:.1f} kW ~ {peak_power / 0.8:.1f} kVA at minute {peak_time}*")
-    
