@@ -1008,35 +1008,27 @@ with tab3:
                     attempt_start = t
                     conflict_hit = False
                     while attempt_start + duration <= TOTAL_MINUTES:
-                     if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle, mod):
-                      if phase == "Cooling":
-                        # Delay Cooling by the OTHER group's Evacuation duration from the table
-                        this_group = group_of[mod]
-                        other_group = "B" if this_group == "A" else "A"
-                        pause_minutes = int(PHASE_DURATIONS_BY_GROUP[other_group]["Evacuation"])
+                        if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle, mod):
+                            # Delay Cooling by the OTHER group's Evacuation duration from the table
+                            this_group = group_of[mod]
+                            other_group = "B" if this_group == "A" else "A"
+                            pause_minutes = int(PHASE_DURATIONS_BY_GROUP[other_group]["Evacuation"])
 
-                        if not conflict_hit:
-                            evac_cool_stats["cooling_delay_events"] += 1
-                            conflict_hit = True
+                            if not conflict_hit:
+                                evac_cool_stats["cooling_delay_events"] += 1
+                                conflict_hit = True
 
-                        evac_cool_stats["cooling_delay_minutes"] += pause_minutes
-                        attempt_start += pause_minutes
-                        continue
+                            evac_cool_stats["cooling_delay_minutes"] += pause_minutes
+                            attempt_start += pause_minutes
+                            continue
 
-                       # elif phase == "Evacuation":
-                        if not conflict_hit:
-                            evac_cool_stats["evac_delay_events"] += 1
-                            conflict_hit = True
-                        evac_cool_stats["evac_delay_minutes"] += 1
-                        attempt_start += 1
-                        continue
                         if can_allocate_internal(
                             phase, attempt_start, duration,
                             temp_resource_usage_for_cycle
                         ):
                             break
                         attempt_start += 1
-                    
+
                     if attempt_start + duration > TOTAL_MINUTES:
                         cycle_success = False
                         break
@@ -1705,8 +1697,7 @@ with tab2:
 
                 
         if not progress:
-           st.error("Scheduler stalled - no phases could be scheduled") 
-        break
+            break
 
     df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
 
