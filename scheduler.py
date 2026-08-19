@@ -23,7 +23,7 @@ Stage-based visualization for paired modules.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
-tab1, tab2, tab3 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis"])
+tab1, tab2, tab3, tab4 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved"])
 
 if False:  # Module pair analysis removed (fan pairing fixed)
           # ===============================
@@ -302,7 +302,7 @@ if False:  # Module pair analysis removed (fan pairing fixed)
               return throughput_df
           
           def create_combined_metrics(df_schedule, cycles_df, modules, total_minutes, module_co2_capture):
-              """Create a combined metrics table with cycles, CO2, utilization, and active minutes."""
+              """Create a combined metrics table olycles, CO2, utilization, and active minutes."""
               # Get utilization data
               util_data = []
               for mod in modules:
@@ -810,9 +810,10 @@ with tab3:
             help="Max modules in desorption phases + Cooling at the same time."
         )
         shared_evac_cooling_cap = st.number_input(
-            "Max modules: Evacuation + Cooling (Interleaved)",
+            "Max modules: Evacuation / Cooling (Interleaved)",
             1, 32, 8,
-            help="One shared resource for both phases. Max modules in Evacuation or Cooling combined at once."
+            # help="One shared resource for both phases. Max modules in Evacuation or Cooling combined at once."
+            help ="One shared resource for both phases. Max modules in Evacuation or Cooling combined at once."
         )
         shared_purge_heat_co2_cap = st.number_input(
             "Max modules: NCG + Heating + CO2 (Interleaved)",
@@ -848,6 +849,10 @@ with tab3:
     PHASE_DURATIONS_BY_GROUP = {"A": grp_a, "B": grp_b}
 
     enforce_evac_cool = st.checkbox("Evacuation Overrides Cooling", value=True)
+    allow_cooling_pause = st.checkbox(
+    "Allow Cooling Pause During Evacuation",
+    value=True
+)
 
     # --- Fixed Constants ---
     TOTAL_MINUTES = target_time # 24 hours * 60 minutes
@@ -925,13 +930,15 @@ with tab3:
                 return True
             # Interleaved: shared resource groups
             if current_desorption_mode == "Interleaved":
-                if phase in ("Evacuation", "Cooling"):
-                    evac_cool_phases = ("Evacuation", "Cooling")
-                    for t in range(start, end_safe):
-                        combined = sum(current_resource_state[p][t] for p in evac_cool_phases)
-                        if combined >= shared_evac_cooling_cap:
-                            return False
-                    return True
+                  # Evacuation and Cooling are now independent.
+                  # They can run at the same time, as long as each phase stays
+                 # within its own allowed capacity.
+                if phase == "Evacuation":
+                   return bool(np.all(current_resource_state["Evacuation"][start:end_safe] < shared_evac_cooling_cap))
+
+                    # if phase == "Cooling":
+                    # return bool(np.all(current_resource_state["Cooling"][start:end_safe] < shared_evac_cooling_cap))
+
                 if phase in ("NCG Purging", "Heating", "CO2 Purging"):
                     purge_heat_co2_phases = ("NCG Purging", "Heating", "CO2 Purging")
                     for t in range(start, end_safe):
@@ -953,18 +960,30 @@ with tab3:
             end_safe = min(end_time, TOTAL_MINUTES)
             current_resource_state[phase][start:end_safe] += 1
 
-        def evac_cool_conflict_internal(phase, start, duration, current_resource_state):
+        def evac_cool_conflict_internal(phase, start, duration, current_resource_state, mod):
             if baseline_mode or current_desorption_mode != "Interleaved":
                 return False
-            end_time = start + duration
-            end_safe = min(end_time, TOTAL_MINUTES)
+
+             
+            if not enforce_evac_cool:
+                return False   
+            # end_time = start + duration
+            # end_safe = min(end_time, TOTAL_MINUTES)
             # enforce_evac_cool: Evacuation overrides Cooling (Cooling pauses). Only Cooling waits.
             # When off: No interruption—both block each other; whoever started first runs to completion.
-            if phase == "Cooling":
-                return np.any(current_resource_state["Evacuation"][start:end_safe] > 0)
-            if phase == "Evacuation":
-                return False if enforce_evac_cool else np.any(current_resource_state["Cooling"][start:end_safe] > 0)
-            return False
+            if phase != "Cooling":
+                return False
+             
+            end_time = start + duration
+            end_safe = min(end_time, TOTAL_MINUTES)
+
+            this_group = group_of[mod]
+            other_group = "B" if this_group == "A" else "A"
+            
+            return np.any(current_resource_state["Evacuation"][start:end_safe] > 0)
+            # if phase == "Evacuation":
+            #     return False if enforce_evac_cool else np.any(current_resource_state["Cooling"][start:end_safe] > 0)
+            # return False
         
         # Respect group pairings (odd=Group A, even=Group B): process Group A first, then Group B
         mod_order = sorted(modules, key=lambda m: (group_of.get(m, "A") != "A", m))
@@ -989,19 +1008,28 @@ with tab3:
                     attempt_start = t
                     conflict_hit = False
                     while attempt_start + duration <= TOTAL_MINUTES:
-                        if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle):
-                            if phase == "Cooling":
-                                if not conflict_hit:
-                                    evac_cool_stats["cooling_delay_events"] += 1
-                                    conflict_hit = True
-                                evac_cool_stats["cooling_delay_minutes"] += 1
-                            elif phase == "Evacuation":
-                                if not conflict_hit:
-                                    evac_cool_stats["evac_delay_events"] += 1
-                                    conflict_hit = True
-                                evac_cool_stats["evac_delay_minutes"] += 1
-                            attempt_start += 1
-                            continue
+                     if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle, mod):
+                      if phase == "Cooling":
+                        # Delay Cooling by the OTHER group's Evacuation duration from the table
+                        this_group = group_of[mod]
+                        other_group = "B" if this_group == "A" else "A"
+                        pause_minutes = int(PHASE_DURATIONS_BY_GROUP[other_group]["Evacuation"])
+
+                        if not conflict_hit:
+                            evac_cool_stats["cooling_delay_events"] += 1
+                            conflict_hit = True
+
+                        evac_cool_stats["cooling_delay_minutes"] += pause_minutes
+                        attempt_start += pause_minutes
+                        continue
+
+                       # elif phase == "Evacuation":
+                        if not conflict_hit:
+                            evac_cool_stats["evac_delay_events"] += 1
+                            conflict_hit = True
+                        evac_cool_stats["evac_delay_minutes"] += 1
+                        attempt_start += 1
+                        continue
                         if can_allocate_internal(
                             phase, attempt_start, duration,
                             temp_resource_usage_for_cycle
@@ -1013,13 +1041,91 @@ with tab3:
                         cycle_success = False
                         break
 
-                    reserve_internal(
-                        phase, attempt_start, duration,
-                        temp_resource_usage_for_cycle
-                    )
-                    cycle_phases.append((phase, attempt_start, attempt_start + duration))
+                    # reserve_internal(
+                    #     phase, attempt_start, duration,
+                    #     temp_resource_usage_for_cycle
+                    # )
+                    # cycle_phases.append((phase, attempt_start, attempt_start + duration))
                     
-                    t = attempt_start + duration
+                    # t = attempt_start + duration
+
+                    if phase == "Cooling" and allow_cooling_pause:
+
+                        remaining = duration
+                        cooling_segments = []
+                        current_start = attempt_start
+
+                        while remaining > 0:
+
+                            evac_busy = temp_resource_usage_for_cycle["Evacuation"]
+
+                            next_conflict = None
+
+                            for t_check in range(
+                                current_start,
+                                min(TOTAL_MINUTES, current_start + remaining)
+                            ):
+                                if evac_busy[t_check] > 0:
+                                    next_conflict = t_check
+                                    break
+
+                            if next_conflict is None:
+                                cooling_segments.append(
+                                    (current_start, current_start + remaining)
+                                )
+                                remaining = 0
+
+                            else:
+
+                                if next_conflict > current_start:
+
+                                    run_time = next_conflict - current_start
+
+                                    cooling_segments.append(
+                                        (current_start, next_conflict)
+                                    )
+
+                                    remaining -= run_time
+
+                                pause_end = next_conflict
+
+                                while (
+                                    pause_end < TOTAL_MINUTES and
+                                    evac_busy[pause_end] > 0
+                                ):
+                                    pause_end += 1
+
+                                current_start = pause_end
+
+                        for seg_start, seg_end in cooling_segments:
+
+                            reserve_internal(
+                                "Cooling",
+                                seg_start,
+                                seg_end - seg_start,
+                                temp_resource_usage_for_cycle
+                            )
+
+                            cycle_phases.append(
+                                ("Cooling", seg_start, seg_end)
+                            )
+
+                        t = cooling_segments[-1][1]
+
+                    else:
+
+                        reserve_internal(
+                            phase,
+                            attempt_start,
+                            duration,
+                            temp_resource_usage_for_cycle
+                        )
+
+                        cycle_phases.append(
+                            (phase, attempt_start, attempt_start + duration)
+                        )
+
+                        t = attempt_start + duration
 
                     next_index = PHASES.index(phase) + 1
                     if next_index < len(PHASES):
@@ -1596,8 +1702,11 @@ with tab2:
                     schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
                 module_timers[mod] = t
                 progress = True
+
+                
         if not progress:
-            break
+           st.error("Scheduler stalled - no phases could be scheduled") 
+        break
 
     df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
 
@@ -1655,3 +1764,351 @@ with tab2:
     st.pyplot(fig)
 
     st.markdown("**Stage 1:** Cooling & Adsorption | **Stage 2:** Evacuation, NCG Purging, Heating, CO2 Purging")
+
+with tab4:
+    st.subheader("Advanced Interleaved - 3 Pair Scheduling")
+
+    PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling','Repressurization' ]
+
+    st.markdown("### Inputs")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        TOTAL_MINUTES_ADV = st.number_input(
+            "Operating Period (min)",
+            0, 1440, 1440,
+            key="adv_total_minutes"
+        )
+
+    with col2:
+        adv_enforce_evac_cool = st.checkbox(
+            "Evacuation Overrides Cooling (Advanced Interleaved)",
+            value=True,
+            key="adv_enforce_evac_cool",
+            help="When another pair's Evacuation overlaps a pair's Cooling, Cooling pauses and resumes once that Evacuation ends."
+        )
+
+        st.caption("Phase durations per pair - edit directly in the table")
+
+    if "adv_phase_durations" not in st.session_state:
+        st.session_state.adv_phase_durations = pd.DataFrame({
+            "Phase": PHASES,
+            "Pair 1 (min)": [25, 7, 2, 20, 40, 30, 5],
+            "Pair 2 (min)": [25, 7, 2, 20, 40, 30, 5],
+            "Pair 3 (min)": [25, 7, 2, 20, 40, 30, 5],
+        })
+
+    adv_phase_table = st.data_editor(
+        st.session_state.adv_phase_durations,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Pair 1 (min)": st.column_config.NumberColumn("Pair 1 (min)", min_value=0, max_value=240, required=True),
+            "Pair 2 (min)": st.column_config.NumberColumn("Pair 2 (min)", min_value=0, max_value=240, required=True),
+            "Pair 3 (min)": st.column_config.NumberColumn("Pair 3 (min)", min_value=0, max_value=240, required=True),
+        },
+        key="adv_phase_editor"
+    )
+
+    st.session_state.adv_phase_durations = adv_phase_table
+
+    PAIRS = ["Pair 1", "Pair 2", "Pair 3"]
+
+    PHASE_DURATIONS_BY_PAIR = {
+        pair: {
+            phase: int(
+                adv_phase_table.loc[
+                    adv_phase_table["Phase"] == phase,
+                    f"{pair} (min)"
+                ].iloc[0]
+            )
+            for phase in PHASES
+        }
+        for pair in PAIRS
+    }
+
+    def run_advanced_interleaved():
+        """
+        Advanced 3-pair interleaved scheduler.
+
+        Sequence per pair:
+        Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging -> Cooling -> Repressurization
+
+        Rules:
+        - Pair 1 can overlap adsorption with Pair 2 and Pair 3.
+        - Pair 2 and Pair 3 adsorption cannot overlap each other.
+        - Only one pair can be in Desorption chain at a time.
+        - Only one pair can be in Cooling at a time.
+        - Evacuation can only begin when another pair is in Repressurization.
+        """
+
+        schedule = []
+        PAIRS = ["Pair 1", "Pair 2", "Pair 3"]
+
+        DESORPTION_CHAIN = [
+            "Evacuation",
+            "NCG Purging",
+            "Heating",
+            "CO2 Purging"
+        ]
+
+        pair_next_phase = {
+            "Pair 1": "Adsorption",
+            "Pair 2": "Desorption",
+            "Pair 3": "Cooling",
+        }
+
+        pair_ready_time = {
+            "Pair 1": 0,
+            "Pair 2": 0,
+            "Pair 3": 0,
+        }
+
+        resource_ready_time = {
+            "Desorption": 0,
+            "Cooling": 0,
+            "Repressurization": 0,
+        }
+
+    # def find_repressurization_start(pair, earliest_start):
+        
+                
+        # repress_rows = [
+        #     row for row in schedule
+        #     if row["Phase"] == "Repressurization" and row["Pair"] != pair
+        # ]
+
+        # best_start = None
+
+        # for row in sorted(repress_rows, key=lambda r: r["Start"]):
+
+        #     possible_start = max(earliest_start, row["Start"])
+
+        #     # Evacuation only needs to BEGIN during repressurization
+        #     if possible_start < row["End"]:
+
+        #         if best_start is None or possible_start < best_start:
+        #             best_start = possible_start
+
+        # return best_start
+
+        while True:
+            progress = False
+
+            for pair in PAIRS:
+                phase_group = pair_next_phase[pair]
+
+                if phase_group == "Adsorption":
+                    duration = PHASE_DURATIONS_BY_PAIR[pair]["Adsorption"]
+
+                    # Pair 1 can overlap with Pair 2 and Pair 3.
+                    # Pair 2 and Pair 3 cannot overlap each other.
+                    start = pair_ready_time[pair]
+
+                    if pair in ("Pair 2", "Pair 3"):
+                        blocking_pair = "Pair 3" if pair == "Pair 2" else "Pair 2"
+                        for row in schedule:
+                            if row["Phase"] == "Adsorption" and row["Pair"] == blocking_pair:
+                                if start < row["End"] and start + duration > row["Start"]:
+                                    start = row["End"]
+
+                    end = start + duration
+
+                    if end > TOTAL_MINUTES_ADV:
+                        continue
+
+                    schedule.append({
+                        "Pair": pair,
+                        "Phase": "Adsorption",
+                        "Start": start,
+                        "End": end
+                    })
+
+                    pair_ready_time[pair] = end
+                    pair_next_phase[pair] = "Desorption"
+                    progress = True
+
+                elif phase_group == "Desorption":
+                    earliest_start = max(pair_ready_time[pair], resource_ready_time["Desorption"])
+
+                    # Evacuation cannot start unless another pair is in Repressurization
+                    start = earliest_start
+
+                    phase_start = start
+                    total_desorption_duration = sum(
+                        PHASE_DURATIONS_BY_PAIR[pair][phase]
+                        for phase in DESORPTION_CHAIN
+                    )
+
+                    end = start + total_desorption_duration
+
+                    if end > TOTAL_MINUTES_ADV:
+                        continue
+
+                    for phase in DESORPTION_CHAIN:
+                        duration = PHASE_DURATIONS_BY_PAIR[pair][phase]
+
+                        if duration > 0:
+                            schedule.append({
+                                "Pair": pair,
+                                "Phase": phase,
+                                "Start": phase_start,
+                                "End": phase_start + duration
+                            })
+
+                        phase_start += duration
+
+                    pair_ready_time[pair] = end
+                    resource_ready_time["Desorption"] = end
+                    pair_next_phase[pair] = "Cooling"
+                    progress = True
+
+                elif phase_group == "Cooling":
+                    start = max(pair_ready_time[pair], resource_ready_time["Cooling"])
+                    duration = PHASE_DURATIONS_BY_PAIR[pair]["Cooling"]
+
+                    # Evacuation gets priority over Cooling: if another pair's Evacuation
+                    # overlaps the Cooling window, Cooling pauses and resumes with its
+                    # remaining duration as soon as that Evacuation ends.
+                    other_evac_events = sorted(
+                        (row for row in schedule
+                         if row["Phase"] == "Evacuation" and row["Pair"] != pair),
+                        key=lambda r: r["Start"]
+                    ) if adv_enforce_evac_cool else []
+
+                    cooling_segments = []
+                    remaining = duration
+                    current_start = start
+
+                    while remaining > 0:
+                        # Is current_start inside an Evacuation window? If so, jump past it.
+                        blocking = next(
+                            (row for row in other_evac_events
+                             if row["Start"] <= current_start < row["End"]),
+                            None
+                        )
+                        if blocking is not None:
+                            current_start = blocking["End"]
+                            continue
+
+                        # Run until the next upcoming Evacuation start, or until done.
+                        next_evac_start = next(
+                            (row["Start"] for row in other_evac_events
+                             if row["Start"] > current_start),
+                            None
+                        )
+                        run_end = current_start + remaining
+                        if next_evac_start is not None and next_evac_start < run_end:
+                            run_end = next_evac_start
+
+                        if run_end > current_start:
+                            cooling_segments.append((current_start, run_end))
+                            remaining -= (run_end - current_start)
+                        current_start = run_end
+
+                    end = cooling_segments[-1][1]
+
+                    if end > TOTAL_MINUTES_ADV:
+                        continue
+
+                    for seg_start, seg_end in cooling_segments:
+                        schedule.append({
+                            "Pair": pair,
+                            "Phase": "Cooling",
+                            "Start": seg_start,
+                            "End": seg_end
+                        })
+
+                    pair_ready_time[pair] = end
+                    resource_ready_time["Cooling"] = end
+                    pair_next_phase[pair] = "Repressurization"
+                    progress = True
+
+                elif phase_group == "Repressurization":
+                    start = max(pair_ready_time[pair], resource_ready_time["Repressurization"])
+                    duration = PHASE_DURATIONS_BY_PAIR[pair]["Repressurization"]
+                    end = start + duration
+
+                    if end > TOTAL_MINUTES_ADV:
+                        continue
+
+                    schedule.append({
+                        "Pair": pair,
+                        "Phase": "Repressurization",
+                        "Start": start,
+                        "End": end
+                    })
+
+                    pair_ready_time[pair] = end
+                    resource_ready_time["Repressurization"] = end
+                    pair_next_phase[pair] = "Adsorption"
+                    progress = True
+
+            if not progress:
+                break
+
+        return pd.DataFrame(schedule)
+
+    if st.button("Generate Advanced Interleaved Schedule", key="adv_generate"):
+        adv_schedule = run_advanced_interleaved()
+
+        if adv_schedule is None:
+            st.error("run_advanced_interleaved() returned None")
+            st.stop()
+
+
+        st.markdown("### Complete Cycles")
+
+        cycle_rows = []
+        for pair in PAIRS:
+            pair_df = adv_schedule[adv_schedule["Pair"] == pair]
+            complete_cycles = len(pair_df) // len(PHASES)
+            cycle_rows.append({
+                "Pair": pair,
+                "Complete Cycles": complete_cycles
+            })
+
+        st.dataframe(pd.DataFrame(cycle_rows), use_container_width=True, hide_index=True)
+
+        st.markdown("### Advanced Interleaved Gantt Chart")
+
+        colors = {
+            'Adsorption': '#4B9CD3',
+            'Evacuation': '#FFB347',
+            'NCG Purging': '#FFD700',
+            'Heating': '#E97451',
+            'CO2 Purging': '#90EE90',
+            'Cooling': '#9370DB',
+            'Repressurization': '#B0B0B0'
+        }
+
+        fig, ax = plt.subplots(figsize=(14, 5))
+
+        for _, row in adv_schedule.iterrows():
+            ax.barh(
+                row["Pair"],
+                row["End"] - row["Start"],
+                left=row["Start"],
+                color=colors.get(row["Phase"], "#888"),
+                edgecolor="black"
+            )
+
+        ax.set_xlabel("Time (minutes)")
+        ax.set_ylabel("Pairs")
+        ax.set_title("Advanced Interleaved Schedule - 3 Pairs")
+        ax.set_xlim(0, TOTAL_MINUTES_ADV)
+        ax.grid(True, axis="x", linestyle="--", alpha=0.4)
+
+        ax.legend(
+            [plt.Rectangle((0, 0), 1, 1, color=colors[p]) for p in PHASES],
+            PHASES,
+            loc="upper right",
+            fontsize=8
+        )
+
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        with st.expander("Schedule Data"):
+            st.dataframe(adv_schedule, use_container_width=True, hide_index=True)
