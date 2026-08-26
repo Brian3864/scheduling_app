@@ -22,6 +22,7 @@ Stage-based visualization for paired modules.
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase)
 
 **Tab 4: Advanced Interleaved**
+
 Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Pair 1, Pair 2, and Pair 3 (Groups A, B, and C).
 - Each pair cycles through three phase groups: Adsorption, the Desorption chain (Evacuation → NCG Purging → Heating → CO2 Purging), and Cooling
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
