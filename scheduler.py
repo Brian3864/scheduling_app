@@ -15,11 +15,20 @@ Customize:
 **Tab 2: M2&M4 + LRVP**  
 Stage-based visualization for paired modules.
 
-**Tab 3: Full Schedule Analysis**  
+**Tab 3: Full Schedule Analysis**
 - Schedule 2–32 modules (Group A + B) with shared resource limits
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2)
 - Baseline analysis: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase)
+
+**Tab 4: Advanced Interleaved**
+Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Pair 1, Pair 2, and Pair 3 (Groups A, B, and C).
+- Each pair cycles through three phase groups: Adsorption, the Desorption chain (Evacuation → NCG Purging → Heating → CO2 Purging), and Cooling
+- Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
+- Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
+- Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
+
+*Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
