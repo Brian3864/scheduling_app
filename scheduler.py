@@ -1921,21 +1921,23 @@ with tab4:
 
     TOTAL_MODULES_ADV = 16
     MODULE_LABELS_ADV = [f"M{i}" for i in range(1, TOTAL_MODULES_ADV + 1)]
-    # Auto even split: Modules 1-6 -> Pair 1, 7-11 -> Pair 2, 12-16 -> Pair 3
+    # Module split: Modules 1-6 -> Pair 1, 7-12 -> Pair 2, 13-16 -> Pair 3 (6/6/4)
     PAIR_OF_MODULE_ADV = {}
     for i in range(1, TOTAL_MODULES_ADV + 1):
         if i <= 6:
             PAIR_OF_MODULE_ADV[i] = "Pair 1"
-        elif i <= 11:
+        elif i <= 12:
             PAIR_OF_MODULE_ADV[i] = "Pair 2"
         else:
             PAIR_OF_MODULE_ADV[i] = "Pair 3"
 
-    st.caption("Energy used & plant yield per module, per completed pair-cycle — edit directly in the table (Modules 1–6 = Pair 1, 7–11 = Pair 2, 12–16 = Pair 3)")
-    if "energy_yield_tab4" not in st.session_state:
+    st.caption("Energy used & plant yield per module, per completed pair-cycle — edit directly in the table (Modules 1–6 = Pair 1, 7–12 = Pair 2, 13–16 = Pair 3)")
+    _pair_col_adv = [PAIR_OF_MODULE_ADV[i] for i in range(1, TOTAL_MODULES_ADV + 1)]
+    if ("energy_yield_tab4" not in st.session_state
+            or list(st.session_state.energy_yield_tab4["Pair"]) != _pair_col_adv):
         st.session_state.energy_yield_tab4 = pd.DataFrame({
             "Module": MODULE_LABELS_ADV,
-            "Pair": [PAIR_OF_MODULE_ADV[i] for i in range(1, TOTAL_MODULES_ADV + 1)],
+            "Pair": _pair_col_adv,
             "Energy per Cycle (kWh)": [0.0] * TOTAL_MODULES_ADV,
             "Yield per Cycle (kg CO2)": [0.0] * TOTAL_MODULES_ADV,
         })
