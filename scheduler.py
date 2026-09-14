@@ -1269,28 +1269,54 @@ with tab3:
         cycle_counts_baseline = count_complete_cycles_df(schedule_baseline)
         cycles_baseline = int(cycle_counts_baseline["Complete Cycles"].sum())
 
-        # Cycle count per pair: total cycles for each 8-module group (Baseline, Concurrent, Interleaved)
-        def pair_cycle_totals(cycle_counts_df, group_ids):
+        # Cycle count per pair: a pair's cycle = one Adsorption-to-next-Adsorption span of
+        # its combined (merged) timeline — matches what's visually countable on the Gantt
+        # chart below, unlike summing each of the 8 modules' own cycle counts (which
+        # overcounts, since several modules adsorb at once within the same pair).
+        def merge_intervals(intervals):
+            """Union of overlapping/touching (start, end) intervals -> [(start, width), ...]."""
+            if not intervals:
+                return []
+            intervals = sorted(intervals)
+            merged = [list(intervals[0])]
+            for s, e in intervals[1:]:
+                if s <= merged[-1][1]:
+                    merged[-1][1] = max(merged[-1][1], e)
+                else:
+                    merged.append([s, e])
+            return [(s, e - s) for s, e in merged]
+
+        def pair_complete_cycles(schedule_df, group_ids):
             rows = []
             for gid in group_ids:
                 mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
-                cycles = cycle_counts_df[cycle_counts_df["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
-                rows.append({"Pair": f"Group {gid}", "Total Cycles": int(cycles.sum())})
+                ads = schedule_df[
+                    schedule_df["Module"].isin(mods_in_group) & (schedule_df["Phase"] == "Adsorption")
+                ]
+                intervals = [
+                    (max(0, s), min(TOTAL_MINUTES, e))
+                    for s, e in zip(ads["Start"], ads["End"]) if s < e
+                ]
+                merged = merge_intervals(intervals)
+                rows.append({"Pair": f"Group {gid}", "Total Cycles": len(merged)})
             return pd.DataFrame(rows)
 
         res_col1, res_col2, res_col3 = st.columns(3)
         with res_col1:
             st.subheader("Baseline")
-            st.dataframe(pair_cycle_totals(cycle_counts_baseline, ["A"]), use_container_width=True, hide_index=True)
-            st.metric("Total Cycles", cycles_baseline)
+            pair_totals_baseline = pair_complete_cycles(schedule_baseline, ["A"])
+            st.dataframe(pair_totals_baseline, use_container_width=True, hide_index=True)
+            st.metric("Total Cycles", int(pair_totals_baseline["Total Cycles"].sum()))
         with res_col2:
             st.subheader("Concurrent")
-            st.dataframe(pair_cycle_totals(cycle_counts_conc, GROUP_IDS), use_container_width=True, hide_index=True)
-            st.metric("Total Cycles", cycles_conc)
+            pair_totals_conc = pair_complete_cycles(schedule_conc, GROUP_IDS)
+            st.dataframe(pair_totals_conc, use_container_width=True, hide_index=True)
+            st.metric("Total Cycles", int(pair_totals_conc["Total Cycles"].sum()))
         with res_col3:
             st.subheader("Interleaved")
-            st.dataframe(pair_cycle_totals(cycle_counts_int, GROUP_IDS), use_container_width=True, hide_index=True)
-            st.metric("Total Cycles", cycles_int)
+            pair_totals_int = pair_complete_cycles(schedule_int, GROUP_IDS)
+            st.dataframe(pair_totals_int, use_container_width=True, hide_index=True)
+            st.metric("Total Cycles", int(pair_totals_int["Total Cycles"].sum()))
 
         # === Yield & Energy Analysis ===
         st.markdown("### Yield & Energy Analysis")
@@ -1384,19 +1410,6 @@ with tab3:
         group_to_y = {gid: i for i, gid in enumerate(GROUP_IDS)}
         bar_height = 0.6
         desorption_set = DESORPTION_PHASES | {'Cooling'}
-
-        def merge_intervals(intervals):
-            """Union of overlapping/touching (start, end) intervals -> [(start, width), ...]."""
-            if not intervals:
-                return []
-            intervals = sorted(intervals)
-            merged = [list(intervals[0])]
-            for s, e in intervals[1:]:
-                if s <= merged[-1][1]:
-                    merged[-1][1] = max(merged[-1][1], e)
-                else:
-                    merged.append([s, e])
-            return [(s, e - s) for s, e in merged]
 
         def draw_gantt(ax, plot_df, colors, is_concurrent, title):
             plot_df = plot_df.copy()
