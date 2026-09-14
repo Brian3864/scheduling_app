@@ -1269,54 +1269,28 @@ with tab3:
         cycle_counts_baseline = count_complete_cycles_df(schedule_baseline)
         cycles_baseline = int(cycle_counts_baseline["Complete Cycles"].sum())
 
-        # Cycle count per group: average cycles per module (Baseline, Concurrent, Interleaved)
+        # Cycle count per pair: total cycles for each 8-module group (Baseline, Concurrent, Interleaved)
+        def pair_cycle_totals(cycle_counts_df, group_ids):
+            rows = []
+            for gid in group_ids:
+                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
+                cycles = cycle_counts_df[cycle_counts_df["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
+                rows.append({"Pair": f"Group {gid}", "Total Cycles": int(cycles.sum())})
+            return pd.DataFrame(rows)
+
         res_col1, res_col2, res_col3 = st.columns(3)
         with res_col1:
             st.subheader("Baseline")
-            group_cycle_rows = []
-            for gid in GROUP_IDS:
-                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
-                if gid == "A":
-                    cycles = cycle_counts_baseline[cycle_counts_baseline["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
-                    avg_cycles = round(cycles.mean(), 1) if len(cycles) > 0 else 0
-                else:
-                    avg_cycles = "—"
-                group_cycle_rows.append({"Group": gid, "Avg Cycles per Module": avg_cycles})
-            st.dataframe(pd.DataFrame(group_cycle_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pair_cycle_totals(cycle_counts_baseline, ["A"]), use_container_width=True, hide_index=True)
             st.metric("Total Cycles", cycles_baseline)
         with res_col2:
             st.subheader("Concurrent")
-            group_cycle_rows = []
-            for gid in GROUP_IDS:
-                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
-                cycles = cycle_counts_conc[cycle_counts_conc["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
-                avg_cycles = round(cycles.mean(), 1) if len(cycles) > 0 else 0
-                group_cycle_rows.append({"Group": gid, "Avg Cycles per Module": avg_cycles})
-            st.dataframe(pd.DataFrame(group_cycle_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pair_cycle_totals(cycle_counts_conc, GROUP_IDS), use_container_width=True, hide_index=True)
             st.metric("Total Cycles", cycles_conc)
         with res_col3:
             st.subheader("Interleaved")
-            group_cycle_rows = []
-            for gid in GROUP_IDS:
-                mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
-                cycles = cycle_counts_int[cycle_counts_int["Module"].isin([f"M{m}" for m in mods_in_group])]["Complete Cycles"]
-                avg_cycles = round(cycles.mean(), 1) if len(cycles) > 0 else 0
-                group_cycle_rows.append({"Group": gid, "Avg Cycles per Module": avg_cycles})
-            st.dataframe(pd.DataFrame(group_cycle_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pair_cycle_totals(cycle_counts_int, GROUP_IDS), use_container_width=True, hide_index=True)
             st.metric("Total Cycles", cycles_int)
-
-        # Complete Cycles (per module): Baseline, Concurrent, Interleaved
-        with st.expander("Complete Cycles (per module)"):
-            cc_col1, cc_col2, cc_col3 = st.columns(3)
-            with cc_col1:
-                st.caption("Baseline (Group A only)")
-                st.dataframe(cycle_counts_baseline)
-            with cc_col2:
-                st.caption("Concurrent")
-                st.dataframe(cycle_counts_conc)
-            with cc_col3:
-                st.caption("Interleaved")
-                st.dataframe(cycle_counts_int)
 
         # === Yield & Energy Analysis ===
         st.markdown("### Yield & Energy Analysis")
@@ -1407,42 +1381,44 @@ with tab3:
             'Evacuation': '#90EE90', 'NCG Purging': '#90EE90', 'Heating': '#90EE90',
             'CO2 Purging': '#90EE90', 'Cooling': '#90EE90'
         }
-        mod_to_y = {m: i for i, m in enumerate(MODULES)}
-        bar_height = 0.8
+        group_to_y = {gid: i for i, gid in enumerate(GROUP_IDS)}
+        bar_height = 0.6
         desorption_set = DESORPTION_PHASES | {'Cooling'}
+
+        def merge_intervals(intervals):
+            """Union of overlapping/touching (start, end) intervals -> [(start, width), ...]."""
+            if not intervals:
+                return []
+            intervals = sorted(intervals)
+            merged = [list(intervals[0])]
+            for s, e in intervals[1:]:
+                if s <= merged[-1][1]:
+                    merged[-1][1] = max(merged[-1][1], e)
+                else:
+                    merged.append([s, e])
+            return [(s, e - s) for s, e in merged]
 
         def draw_gantt(ax, plot_df, colors, is_concurrent, title):
             plot_df = plot_df.copy()
-            plot_df['Module'] = pd.Categorical(plot_df['Module'], categories=MODULES, ordered=True)
-            plot_df = plot_df.sort_values(['Module', 'Start'])
+            plot_df['Group'] = plot_df['Module'].apply(lambda m: GROUP_OF.get(int(m)))
             if is_concurrent:
-                def merge_contiguous(segments):
-                    if not segments:
-                        return []
-                    merged = [list(segments[0])]
-                    for s, w in segments[1:]:
-                        if merged[-1][0] + merged[-1][1] == s:
-                            merged[-1][1] += w
-                        else:
-                            merged.append([s, w])
-                    return [(s, w) for s, w in merged]
-                for mod in MODULES:
-                    mod_df = plot_df[plot_df['Module'] == mod]
-                    y_pos = mod_to_y.get(mod, min(mod - 1, len(MODULES) - 1))
+                for gid in GROUP_IDS:
+                    grp_df = plot_df[plot_df['Group'] == gid]
+                    y_pos = group_to_y[gid]
                     yrange = (y_pos - bar_height / 2, bar_height)
-                    des_segments = []
-                    ads_segments = []
-                    for _, row in mod_df.iterrows():
+                    des_intervals = []
+                    ads_intervals = []
+                    for _, row in grp_df.iterrows():
                         start = max(0, row['Start'])
                         end = min(TOTAL_MINUTES, row['End'])
                         if start >= end:
                             continue
-                        seg = (start, end - start)
                         if row['Phase'] == 'Adsorption':
-                            ads_segments.append(seg)
+                            ads_intervals.append((start, end))
                         elif row['Phase'] in desorption_set:
-                            des_segments.append(seg)
-                    des_segments = merge_contiguous(des_segments)
+                            des_intervals.append((start, end))
+                    des_segments = merge_intervals(des_intervals)
+                    ads_segments = merge_intervals(ads_intervals)
                     if des_segments:
                         ax.broken_barh(des_segments, yrange, facecolors=colors['Evacuation'],
                                        edgecolors=colors['Evacuation'], linewidths=0.5, zorder=1)
@@ -1450,22 +1426,29 @@ with tab3:
                         ax.broken_barh(ads_segments, yrange, facecolors=colors['Adsorption'],
                                        edgecolors=colors['Adsorption'], linewidths=0.5, zorder=10)
             else:
-                for _, row in plot_df.iterrows():
-                    start = max(0, row['Start'])
-                    end = min(TOTAL_MINUTES, row['End'])
-                    if start >= end:
-                        continue
-                    mod = int(row['Module']) if row['Module'] is not None else 1
-                    y_pos = mod_to_y.get(mod, min(mod - 1, len(MODULES) - 1))
-                    c = colors.get(row['Phase'], colors['Adsorption'])
-                    ax.barh(y_pos, end - start, left=start, height=bar_height, color=c, edgecolor='black')
-            ax.set_yticks(range(len(MODULES)))
-            ax.set_yticklabels([f"M{m}" for m in MODULES])
-            ax.set_ylabel('Module')
+                for gid in GROUP_IDS:
+                    grp_df = plot_df[plot_df['Group'] == gid]
+                    y_pos = group_to_y[gid]
+                    yrange = (y_pos - bar_height / 2, bar_height)
+                    for phase in PHASES:
+                        intervals = []
+                        for _, row in grp_df[grp_df['Phase'] == phase].iterrows():
+                            start = max(0, row['Start'])
+                            end = min(TOTAL_MINUTES, row['End'])
+                            if start >= end:
+                                continue
+                            intervals.append((start, end))
+                        segments = merge_intervals(intervals)
+                        if segments:
+                            c = colors.get(phase, colors['Adsorption'])
+                            ax.broken_barh(segments, yrange, facecolors=c, edgecolors='black', linewidths=0.5)
+            ax.set_yticks(range(len(GROUP_IDS)))
+            ax.set_yticklabels([f"Group {gid} ({len([m for m in MODULES if GROUP_OF[m] == gid])} modules)" for gid in GROUP_IDS])
+            ax.set_ylabel('Pair')
             ax.set_xlabel('Time (minutes)')
             ax.set_title(title)
             ax.set_xlim(0, TOTAL_MINUTES)
-            ax.invert_yaxis()
+            ax.set_ylim(len(GROUP_IDS) - 0.5, -0.5)
             if is_concurrent:
                 legend_handles = [plt.Rectangle((0,0),1,1,color=colors['Adsorption']), plt.Rectangle((0,0),1,1,color=colors['Evacuation'])]
                 legend_labels = ['Adsorption', 'Desorption (locked)']
@@ -1475,7 +1458,7 @@ with tab3:
             ax.legend(legend_handles, legend_labels, loc='upper right', fontsize=8)
 
         gantt_col1, gantt_col2 = st.columns(2)
-        fig_height = max(8, len(MODULES) * 0.5)
+        fig_height = max(3, len(GROUP_IDS) * 1.5)
         with gantt_col1:
             fig1, ax1 = plt.subplots(figsize=(12, fig_height))
             draw_gantt(ax1, schedule_conc, colors_concurrent, True, f'Concurrent (Delay: {final_delay_to_use} min)')
