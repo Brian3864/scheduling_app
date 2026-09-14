@@ -873,6 +873,35 @@ with tab3:
     GROUP_IDS = ["A", "B"]
     GROUP_OF = {m: ("A" if m % 2 == 1 else "B") for m in MODULES}
 
+    st.caption("Energy used & plant yield per module, per completed cycle — edit directly in the table")
+    if ("energy_yield_tab3" not in st.session_state
+            or len(st.session_state.energy_yield_tab3) != TOTAL_MODULES):
+        st.session_state.energy_yield_tab3 = pd.DataFrame({
+            "Module": MODULE_LABELS,
+            "Energy per Cycle (kWh)": [0.0] * TOTAL_MODULES,
+            "Yield per Cycle (kg CO2)": [0.0] * TOTAL_MODULES,
+        })
+    energy_yield_tab3 = st.data_editor(
+        st.session_state.energy_yield_tab3,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Module": st.column_config.TextColumn("Module", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_tab3",
+    )
+    st.session_state.energy_yield_tab3 = energy_yield_tab3
+    ENERGY_PER_CYCLE = {
+        m: float(energy_yield_tab3.loc[energy_yield_tab3["Module"] == f"M{m}", "Energy per Cycle (kWh)"].iloc[0])
+        for m in MODULES
+    }
+    YIELD_PER_CYCLE = {
+        m: float(energy_yield_tab3.loc[energy_yield_tab3["Module"] == f"M{m}", "Yield per Cycle (kg CO2)"].iloc[0])
+        for m in MODULES
+    }
+
     def adjusted_duration(phase, base_duration):
         return int(base_duration)
 
@@ -1288,6 +1317,71 @@ with tab3:
             with cc_col3:
                 st.caption("Interleaved")
                 st.dataframe(cycle_counts_int)
+
+        # === Yield & Energy Analysis ===
+        st.markdown("### Yield & Energy Analysis")
+        st.caption("Total Yield/Energy = Complete Cycles × per-module rate entered above. Compare against cycle counts to see how scheduling mode affects plant output.")
+
+        def yield_energy_per_module(cycle_counts_df):
+            df = cycle_counts_df.copy()
+            module_num = df["Module"].str.lstrip("M").astype(int)
+            df["Group"] = module_num.map(GROUP_OF)
+            df["Total Yield (kg CO2)"] = [
+                cycles * YIELD_PER_CYCLE[m] for cycles, m in zip(df["Complete Cycles"], module_num)
+            ]
+            df["Total Energy (kWh)"] = [
+                cycles * ENERGY_PER_CYCLE[m] for cycles, m in zip(df["Complete Cycles"], module_num)
+            ]
+            return df
+
+        def group_yield_energy_summary(per_module_df, group_ids):
+            rows = []
+            for gid in group_ids:
+                grp = per_module_df[per_module_df["Group"] == gid]
+                total_cycles = int(grp["Complete Cycles"].sum())
+                total_yield = grp["Total Yield (kg CO2)"].sum()
+                total_energy = grp["Total Energy (kWh)"].sum()
+                rows.append({
+                    "Group": gid,
+                    "Total Cycles": total_cycles,
+                    "Total Yield (kg CO2)": round(total_yield, 1),
+                    "Total Energy (kWh)": round(total_energy, 1),
+                    "kg CO2 per kWh": round(total_yield / total_energy, 3) if total_energy > 0 else "—",
+                })
+            return pd.DataFrame(rows)
+
+        per_module_baseline = yield_energy_per_module(cycle_counts_baseline)
+        per_module_conc = yield_energy_per_module(cycle_counts_conc)
+        per_module_int = yield_energy_per_module(cycle_counts_int)
+
+        ye_col1, ye_col2, ye_col3 = st.columns(3)
+        with ye_col1:
+            st.subheader("Baseline")
+            st.dataframe(group_yield_energy_summary(per_module_baseline, ["A"]), use_container_width=True, hide_index=True)
+            st.metric("Total Yield", f"{per_module_baseline['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+            st.metric("Total Energy", f"{per_module_baseline['Total Energy (kWh)'].sum():.1f} kWh")
+        with ye_col2:
+            st.subheader("Concurrent")
+            st.dataframe(group_yield_energy_summary(per_module_conc, GROUP_IDS), use_container_width=True, hide_index=True)
+            st.metric("Total Yield", f"{per_module_conc['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+            st.metric("Total Energy", f"{per_module_conc['Total Energy (kWh)'].sum():.1f} kWh")
+        with ye_col3:
+            st.subheader("Interleaved")
+            st.dataframe(group_yield_energy_summary(per_module_int, GROUP_IDS), use_container_width=True, hide_index=True)
+            st.metric("Total Yield", f"{per_module_int['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+            st.metric("Total Energy", f"{per_module_int['Total Energy (kWh)'].sum():.1f} kWh")
+
+        with st.expander("Yield & Energy (per module)"):
+            ye_dcol1, ye_dcol2, ye_dcol3 = st.columns(3)
+            with ye_dcol1:
+                st.caption("Baseline (Group A only)")
+                st.dataframe(per_module_baseline, use_container_width=True, hide_index=True)
+            with ye_dcol2:
+                st.caption("Concurrent")
+                st.dataframe(per_module_conc, use_container_width=True, hide_index=True)
+            with ye_dcol3:
+                st.caption("Interleaved")
+                st.dataframe(per_module_int, use_container_width=True, hide_index=True)
 
         # === Baseline Analysis ===
         st.markdown("### Baseline Analysis")
@@ -1829,6 +1923,44 @@ with tab4:
         for pair in PAIRS
     }
 
+    TOTAL_MODULES_ADV = 16
+    MODULE_LABELS_ADV = [f"M{i}" for i in range(1, TOTAL_MODULES_ADV + 1)]
+    # Auto even split: Modules 1-6 -> Pair 1, 7-11 -> Pair 2, 12-16 -> Pair 3
+    PAIR_OF_MODULE_ADV = {}
+    for i in range(1, TOTAL_MODULES_ADV + 1):
+        if i <= 6:
+            PAIR_OF_MODULE_ADV[i] = "Pair 1"
+        elif i <= 11:
+            PAIR_OF_MODULE_ADV[i] = "Pair 2"
+        else:
+            PAIR_OF_MODULE_ADV[i] = "Pair 3"
+
+    st.caption("Energy used & plant yield per module, per completed pair-cycle — edit directly in the table (Modules 1–6 = Pair 1, 7–11 = Pair 2, 12–16 = Pair 3)")
+    if "energy_yield_tab4" not in st.session_state:
+        st.session_state.energy_yield_tab4 = pd.DataFrame({
+            "Module": MODULE_LABELS_ADV,
+            "Pair": [PAIR_OF_MODULE_ADV[i] for i in range(1, TOTAL_MODULES_ADV + 1)],
+            "Energy per Cycle (kWh)": [0.0] * TOTAL_MODULES_ADV,
+            "Yield per Cycle (kg CO2)": [0.0] * TOTAL_MODULES_ADV,
+        })
+    energy_yield_tab4 = st.data_editor(
+        st.session_state.energy_yield_tab4,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Module": st.column_config.TextColumn("Module", disabled=True),
+            "Pair": st.column_config.TextColumn("Pair", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_tab4",
+    )
+    st.session_state.energy_yield_tab4 = energy_yield_tab4
+
+    # A pair's modules cycle together, so per-pair rate = sum of its modules' per-module rates
+    PAIR_ENERGY_PER_CYCLE = energy_yield_tab4.groupby("Pair")["Energy per Cycle (kWh)"].sum().to_dict()
+    PAIR_YIELD_PER_CYCLE = energy_yield_tab4.groupby("Pair")["Yield per Cycle (kg CO2)"].sum().to_dict()
+
     def run_advanced_interleaved():
         """
         Advanced 3-pair interleaved scheduler.
@@ -2071,6 +2203,32 @@ with tab4:
             })
 
         st.dataframe(pd.DataFrame(cycle_rows), use_container_width=True, hide_index=True)
+
+        st.markdown("### Yield & Energy Analysis")
+        st.caption("Total Yield/Energy = Complete Cycles × the combined per-cycle rate of every module in that pair.")
+
+        yield_energy_rows = []
+        for row in cycle_rows:
+            pair = row["Pair"]
+            cycles = row["Complete Cycles"]
+            total_yield = cycles * PAIR_YIELD_PER_CYCLE.get(pair, 0.0)
+            total_energy = cycles * PAIR_ENERGY_PER_CYCLE.get(pair, 0.0)
+            yield_energy_rows.append({
+                "Pair": pair,
+                "Complete Cycles": cycles,
+                "Total Yield (kg CO2)": round(total_yield, 1),
+                "Total Energy (kWh)": round(total_energy, 1),
+                "kg CO2 per kWh": round(total_yield / total_energy, 3) if total_energy > 0 else "—",
+            })
+
+        yield_energy_df = pd.DataFrame(yield_energy_rows)
+        st.dataframe(yield_energy_df, use_container_width=True, hide_index=True)
+
+        ye_metric_col1, ye_metric_col2 = st.columns(2)
+        with ye_metric_col1:
+            st.metric("Plant Total Yield", f"{yield_energy_df['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+        with ye_metric_col2:
+            st.metric("Plant Total Energy", f"{yield_energy_df['Total Energy (kWh)'].sum():.1f} kWh")
 
         st.markdown("### Advanced Interleaved Gantt Chart")
 
