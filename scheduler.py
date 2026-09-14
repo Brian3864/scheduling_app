@@ -875,6 +875,7 @@ with tab3:
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
     pair_labels_tab3 = [f"Group {gid}" for gid in GROUP_IDS]
     if ("energy_yield_tab3" not in st.session_state
+            or "Pair" not in st.session_state.energy_yield_tab3.columns
             or list(st.session_state.energy_yield_tab3["Pair"]) != pair_labels_tab3):
         st.session_state.energy_yield_tab3 = pd.DataFrame({
             "Pair": pair_labels_tab3,
@@ -1896,6 +1897,7 @@ with tab4:
 
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
     if ("energy_yield_tab4" not in st.session_state
+            or "Pair" not in st.session_state.energy_yield_tab4.columns
             or list(st.session_state.energy_yield_tab4["Pair"]) != PAIRS):
         st.session_state.energy_yield_tab4 = pd.DataFrame({
             "Pair": PAIRS,
