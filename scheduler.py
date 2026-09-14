@@ -23,7 +23,7 @@ Stage-based visualization for paired modules.
 
 **Tab 4: Advanced Interleaved**
 
-Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Pair 1, Pair 2, and Pair 3 (Groups A, B, and C).
+Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Group A, Group B, and Group C.
 - Each pair cycles through three phase groups: Adsorption, the Desorption chain (Evacuation → NCG Purging → Heating → CO2 Purging), and Cooling
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
 - Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
@@ -1857,12 +1857,15 @@ with tab4:
 
         st.caption("Phase durations per pair - edit directly in the table")
 
-    if "adv_phase_durations" not in st.session_state:
+    PAIRS = ["Group A", "Group B", "Group C"]
+    adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
+    if ("adv_phase_durations" not in st.session_state
+            or list(st.session_state.adv_phase_durations.columns) != adv_phase_columns):
         st.session_state.adv_phase_durations = pd.DataFrame({
             "Phase": PHASES,
-            "Pair 1 (min)": [25, 7, 2, 20, 40, 30, 5],
-            "Pair 2 (min)": [25, 7, 2, 20, 40, 30, 5],
-            "Pair 3 (min)": [25, 7, 2, 20, 40, 30, 5],
+            "Group A (min)": [25, 7, 2, 20, 40, 30, 5],
+            "Group B (min)": [25, 7, 2, 20, 40, 30, 5],
+            "Group C (min)": [25, 7, 2, 20, 40, 30, 5],
         })
 
     adv_phase_table = st.data_editor(
@@ -1871,16 +1874,14 @@ with tab4:
         hide_index=True,
         column_config={
             "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Pair 1 (min)": st.column_config.NumberColumn("Pair 1 (min)", min_value=0, max_value=240, required=True),
-            "Pair 2 (min)": st.column_config.NumberColumn("Pair 2 (min)", min_value=0, max_value=240, required=True),
-            "Pair 3 (min)": st.column_config.NumberColumn("Pair 3 (min)", min_value=0, max_value=240, required=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
         },
         key="adv_phase_editor"
     )
 
     st.session_state.adv_phase_durations = adv_phase_table
-
-    PAIRS = ["Pair 1", "Pair 2", "Pair 3"]
 
     PHASE_DURATIONS_BY_PAIR = {
         pair: {
@@ -1934,15 +1935,15 @@ with tab4:
         Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging -> Cooling -> Repressurization
 
         Rules:
-        - Pair 1 can overlap adsorption with Pair 2 and Pair 3.
-        - Pair 2 and Pair 3 adsorption cannot overlap each other.
+        - Group A can overlap adsorption with Group B and Group C.
+        - Group B and Group C adsorption cannot overlap each other.
         - Only one pair can be in Desorption chain at a time.
         - Only one pair can be in Cooling at a time.
         - Evacuation can only begin when another pair is in Repressurization.
         """
 
         schedule = []
-        PAIRS = ["Pair 1", "Pair 2", "Pair 3"]
+        PAIRS = ["Group A", "Group B", "Group C"]
 
         DESORPTION_CHAIN = [
             "Evacuation",
@@ -1952,15 +1953,15 @@ with tab4:
         ]
 
         pair_next_phase = {
-            "Pair 1": "Adsorption",
-            "Pair 2": "Desorption",
-            "Pair 3": "Cooling",
+            "Group A": "Adsorption",
+            "Group B": "Desorption",
+            "Group C": "Cooling",
         }
 
         pair_ready_time = {
-            "Pair 1": 0,
-            "Pair 2": 0,
-            "Pair 3": 0,
+            "Group A": 0,
+            "Group B": 0,
+            "Group C": 0,
         }
 
         resource_ready_time = {
@@ -2000,12 +2001,12 @@ with tab4:
                 if phase_group == "Adsorption":
                     duration = PHASE_DURATIONS_BY_PAIR[pair]["Adsorption"]
 
-                    # Pair 1 can overlap with Pair 2 and Pair 3.
-                    # Pair 2 and Pair 3 cannot overlap each other.
+                    # Group A can overlap with Group B and Group C.
+                    # Group B and Group C cannot overlap each other.
                     start = pair_ready_time[pair]
 
-                    if pair in ("Pair 2", "Pair 3"):
-                        blocking_pair = "Pair 3" if pair == "Pair 2" else "Pair 2"
+                    if pair in ("Group B", "Group C"):
+                        blocking_pair = "Group C" if pair == "Group B" else "Group B"
                         for row in schedule:
                             if row["Phase"] == "Adsorption" and row["Pair"] == blocking_pair:
                                 if start < row["End"] and start + duration > row["Start"]:
