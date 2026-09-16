@@ -187,10 +187,13 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
+
+**Tab 5: Yield vs Cycles**
+Compares Total Cycles, Total Yield, and Total Energy across Concurrent, Interleaved, and Advanced Interleaved. It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entry here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
-tab1, tab2, tab3, tab4 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
 
 if False:  # Module pair analysis removed (fan pairing fixed)
           # Everything inside this `if False:` block is DISABLED and never runs — it's
@@ -1601,6 +1604,25 @@ with tab3:
         yield_energy_conc = pair_yield_energy(pair_totals_conc)
         yield_energy_int = pair_yield_energy(pair_totals_int)
 
+        # Publish Concurrent/Interleaved totals for the Yield vs Cycles comparison
+        # tab. Only refreshes when this "Generate" button is (re)clicked, not on
+        # every app interaction — see that tab's caption for why. Uses the
+        # pair-merged "Total Cycles" (same figure shown in the pair cycle-count
+        # table above), NOT cycles_conc/cycles_int — those sum each of the 8
+        # modules' own cycle counts per pair and overcount for the same reason
+        # fixed earlier in "Cycle count per pair".
+        st.session_state.setdefault("process_comparison", {})
+        st.session_state["process_comparison"]["Concurrent"] = {
+            "Total Cycles": int(yield_energy_conc["Total Cycles"].sum()),
+            "Total Yield (kg CO2)": float(yield_energy_conc["Total Yield (kg CO2)"].sum()),
+            "Total Energy (kWh)": float(yield_energy_conc["Total Energy (kWh)"].sum()),
+        }
+        st.session_state["process_comparison"]["Interleaved"] = {
+            "Total Cycles": int(yield_energy_int["Total Cycles"].sum()),
+            "Total Yield (kg CO2)": float(yield_energy_int["Total Yield (kg CO2)"].sum()),
+            "Total Energy (kWh)": float(yield_energy_int["Total Energy (kWh)"].sum()),
+        }
+
         ye_col1, ye_col2, ye_col3 = st.columns(3)
         with ye_col1:
             st.subheader("Baseline")
@@ -2543,6 +2565,15 @@ with tab4:
         with ye_metric_col2:
             st.metric("Plant Total Energy", f"{yield_energy_df['Total Energy (kWh)'].sum():.1f} kWh")
 
+        # Publish totals for the Yield vs Cycles comparison tab. Only refreshes when
+        # this "Generate" button is (re)clicked — see that tab's caption for why.
+        st.session_state.setdefault("process_comparison", {})
+        st.session_state["process_comparison"]["Advanced Interleaved"] = {
+            "Total Cycles": int(yield_energy_df["Complete Cycles"].sum()),
+            "Total Yield (kg CO2)": float(yield_energy_df["Total Yield (kg CO2)"].sum()),
+            "Total Energy (kWh)": float(yield_energy_df["Total Energy (kWh)"].sum()),
+        }
+
         st.markdown("### Advanced Interleaved Gantt Chart")
 
         colors = {
@@ -2584,3 +2615,107 @@ with tab4:
 
         with st.expander("Schedule Data"):
             st.dataframe(adv_schedule, use_container_width=True, hide_index=True)
+
+with tab5:
+    # Cross-process comparison. Reads whatever tab3 (Concurrent/Interleaved) and
+    # tab4 (Advanced Interleaved) last published to st.session_state["process_comparison"]
+    # when their own "Generate" buttons were clicked — see the sidebar guide for why
+    # this doesn't recompute live on every input change.
+    st.subheader("Yield, Energy & Cycles Comparison")
+    st.caption(
+        "Shows each process's Total Cycles, Total Yield, and Total Energy from the last time its "
+        "own \"Generate\" button was clicked (Concurrent/Interleaved from Full Schedule Analysis, "
+        "Advanced Interleaved from its own tab). Re-click Generate in a tab to refresh its numbers here."
+    )
+
+    PROCESS_ORDER = ["Concurrent", "Interleaved", "Advanced Interleaved"]
+    PROCESS_COLORS = {
+        "Concurrent": "#6C5CE7",
+        "Interleaved": "#E07C5E",
+        "Advanced Interleaved": "#2ECC71",
+    }
+    comparison = st.session_state.get("process_comparison", {})
+    available_processes = [p for p in PROCESS_ORDER if p in comparison]
+    missing_processes = [p for p in PROCESS_ORDER if p not in comparison]
+
+    if missing_processes:
+        st.info(
+            "Missing: " + ", ".join(missing_processes) +
+            ". Generate a schedule in the relevant tab(s) to add them here."
+        )
+
+    if not available_processes:
+        st.warning("No results yet — generate a schedule in Full Schedule Analysis and/or Advanced Interleaved first.")
+    else:
+        comparison_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Total Cycles": comparison[p]["Total Cycles"],
+                "Total Yield (kg CO2)": round(comparison[p]["Total Yield (kg CO2)"], 1),
+                "Total Energy (kWh)": round(comparison[p]["Total Energy (kWh)"], 1),
+                "kg CO2 per kWh": (
+                    round(comparison[p]["Total Yield (kg CO2)"] / comparison[p]["Total Energy (kWh)"], 3)
+                    if comparison[p]["Total Energy (kWh)"] > 0 else "—"
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+
+        st.markdown("### Total Cycles, Yield, and Energy by Process")
+        fig_bars, bar_axes = plt.subplots(1, 3, figsize=(15, 4.5))
+        bar_metrics = ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)"]
+        for ax, metric in zip(bar_axes, bar_metrics):
+            values = [comparison[p][metric] for p in available_processes]
+            bars = ax.bar(
+                available_processes, values,
+                color=[PROCESS_COLORS[p] for p in available_processes],
+                edgecolor="black", alpha=0.9,
+            )
+            for bar in bars:
+                ax.annotate(
+                    f"{bar.get_height():,.1f}",
+                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    ha="center", va="bottom", fontsize=9,
+                )
+            ax.set_title(metric)
+            ax.set_ylabel(metric)
+            ax.tick_params(axis="x", rotation=15)
+            ax.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
+        plt.tight_layout()
+        st.pyplot(fig_bars)
+        plt.close(fig_bars)
+
+        st.markdown("### Yield & Energy vs. Cycles")
+        st.caption("Each point is one process — further right means more cycles; higher means more output per that metric.")
+        rel_col1, rel_col2 = st.columns(2)
+        with rel_col1:
+            fig_yield, ax_yield = plt.subplots(figsize=(6, 5))
+            for p in available_processes:
+                ax_yield.scatter(
+                    comparison[p]["Total Cycles"], comparison[p]["Total Yield (kg CO2)"],
+                    s=160, color=PROCESS_COLORS[p], edgecolor="black", label=p, zorder=3,
+                )
+            ax_yield.set_xlabel("Total Cycles")
+            ax_yield.set_ylabel("Total Yield (kg CO2)")
+            ax_yield.set_title("Yield vs Cycles")
+            ax_yield.grid(True, alpha=0.3)
+            ax_yield.legend(fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig_yield)
+            plt.close(fig_yield)
+        with rel_col2:
+            fig_energy, ax_energy = plt.subplots(figsize=(6, 5))
+            for p in available_processes:
+                ax_energy.scatter(
+                    comparison[p]["Total Cycles"], comparison[p]["Total Energy (kWh)"],
+                    s=160, color=PROCESS_COLORS[p], edgecolor="black", label=p, zorder=3,
+                )
+            ax_energy.set_xlabel("Total Cycles")
+            ax_energy.set_ylabel("Total Energy (kWh)")
+            ax_energy.set_title("Energy vs Cycles")
+            ax_energy.grid(True, alpha=0.3)
+            ax_energy.legend(fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig_energy)
+            plt.close(fig_energy)
