@@ -21,27 +21,50 @@ PAIR_PLANT_MODULE = {
     "Group C": "N1N2N3-M1n3",
 }
 
+def _plant_cycles_df():
+    """Load the plant cycle log, or None if it's missing/malformed."""
+    try:
+        return pd.read_csv(PLANT_CYCLES_CSV)
+    except (FileNotFoundError, KeyError, ValueError):
+        return None
+
+def _module_average(plant_cycles_df, module):
+    """(avg eTotal kWh, avg DES CO2 kg) for one Module value's rows, or (0.0, 0.0)
+    if there are none (or the log failed to load)."""
+    if plant_cycles_df is None:
+        return 0.0, 0.0
+    subset = plant_cycles_df[plant_cycles_df["Module"] == module]
+    if len(subset) == 0:
+        return 0.0, 0.0
+    return (
+        round(float(subset["eTotal kWh"].mean()), 2),
+        round(float(subset["DES CO2 (kg)"].mean()), 2),
+    )
+
 def load_plant_cycle_defaults_by_pair(pairs):
     """Return {pair: (avg eTotal kWh, avg DES CO2 kg)} using each pair's matching
     Module rows (see PAIR_PLANT_MODULE), or (0.0, 0.0) per pair if the file is
     missing, malformed, or has no rows for that Module."""
-    try:
-        plant_cycles_df = pd.read_csv(PLANT_CYCLES_CSV)
-    except (FileNotFoundError, KeyError, ValueError):
-        return {pair: (0.0, 0.0) for pair in pairs}
+    plant_cycles_df = _plant_cycles_df()
+    return {pair: _module_average(plant_cycles_df, PAIR_PLANT_MODULE.get(pair)) for pair in pairs}
 
-    defaults = {}
-    for pair in pairs:
-        module = PAIR_PLANT_MODULE.get(pair)
-        subset = plant_cycles_df[plant_cycles_df["Module"] == module] if module else plant_cycles_df.iloc[0:0]
-        if len(subset) == 0:
-            defaults[pair] = (0.0, 0.0)
-        else:
-            defaults[pair] = (
-                round(float(subset["eTotal kWh"].mean()), 2),
-                round(float(subset["DES CO2 (kg)"].mean()), 2),
-            )
-    return defaults
+# Full Schedule Analysis's two pairs (Group A, Group B; 8 modules each) don't map to
+# a single Module value in the plant log the way tab4's pairs do, so both pairs
+# instead share the SUM of two module-type averages: the 3-Nelion desorption
+# combination (N1N2N3-M1n3) plus the Nelion-3 M2/M4 combination (N3-M2n4).
+TAB3_PLANT_MODULES = ["N1N2N3-M1n3", "N3-M2n4"]
+
+def load_plant_cycle_defaults_tab3():
+    """Return (avg eTotal kWh, avg DES CO2 kg) summed across TAB3_PLANT_MODULES,
+    used as the shared default for both Group A and Group B."""
+    plant_cycles_df = _plant_cycles_df()
+    energy_total = 0.0
+    yield_total = 0.0
+    for module in TAB3_PLANT_MODULES:
+        energy, co2 = _module_average(plant_cycles_df, module)
+        energy_total += energy
+        yield_total += co2
+    return round(energy_total, 2), round(yield_total, 2)
 
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
@@ -946,15 +969,21 @@ with tab3:
     GROUP_IDS = ["A", "B"]
     GROUP_OF = {m: ("A" if m % 2 == 1 else "B") for m in MODULES}
 
+    default_energy_tab3, default_yield_tab3 = load_plant_cycle_defaults_tab3()
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
+    st.caption(
+        f"Defaults for both pairs are seeded from carbonnest_plant_cycles.csv as the sum of the "
+        f"N1N2N3-M1n3 and N3-M2n4 cycle averages: {default_energy_tab3} kWh/cycle, "
+        f"{default_yield_tab3} kg CO2/cycle. Edit per pair if a pair's real output differs."
+    )
     pair_labels_tab3 = [f"Group {gid}" for gid in GROUP_IDS]
     if ("energy_yield_tab3" not in st.session_state
             or "Pair" not in st.session_state.energy_yield_tab3.columns
             or list(st.session_state.energy_yield_tab3["Pair"]) != pair_labels_tab3):
         st.session_state.energy_yield_tab3 = pd.DataFrame({
             "Pair": pair_labels_tab3,
-            "Energy per Cycle (kWh)": [0.0] * len(pair_labels_tab3),
-            "Yield per Cycle (kg CO2)": [0.0] * len(pair_labels_tab3),
+            "Energy per Cycle (kWh)": [default_energy_tab3] * len(pair_labels_tab3),
+            "Yield per Cycle (kg CO2)": [default_yield_tab3] * len(pair_labels_tab3),
         })
     energy_yield_tab3 = st.data_editor(
         st.session_state.energy_yield_tab3,
