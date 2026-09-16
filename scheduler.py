@@ -977,9 +977,17 @@ with tab3:
         f"{default_yield_tab3} kg CO2/cycle. Edit per pair if a pair's real output differs."
     )
     pair_labels_tab3 = [f"Group {gid}" for gid in GROUP_IDS]
+
+    def _still_at_zero_tab3(df):
+        return (df["Energy per Cycle (kWh)"] == 0.0).all() and (df["Yield per Cycle (kg CO2)"] == 0.0).all()
+
     if ("energy_yield_tab3" not in st.session_state
             or "Pair" not in st.session_state.energy_yield_tab3.columns
-            or list(st.session_state.energy_yield_tab3["Pair"]) != pair_labels_tab3):
+            or list(st.session_state.energy_yield_tab3["Pair"]) != pair_labels_tab3
+            # A session created before the CSV-seeded defaults existed (or before this
+            # exact default value was computed) is still sitting at the old 0.0
+            # placeholder — safe to refresh since the user never actually edited it.
+            or _still_at_zero_tab3(st.session_state.energy_yield_tab3)):
         st.session_state.energy_yield_tab3 = pd.DataFrame({
             "Pair": pair_labels_tab3,
             "Energy per Cycle (kWh)": [default_energy_tab3] * len(pair_labels_tab3),
@@ -2085,9 +2093,15 @@ with tab4:
         f"({pair_plant_defaults['Group B'][0]} kWh, {pair_plant_defaults['Group B'][1]} kg CO2). "
         "Edit per pair if a pair's real output differs."
     )
+    def _still_at_zero_tab4(df):
+        return (df["Energy per Cycle (kWh)"] == 0.0).all() and (df["Yield per Cycle (kg CO2)"] == 0.0).all()
+
     if ("energy_yield_tab4" not in st.session_state
             or "Pair" not in st.session_state.energy_yield_tab4.columns
-            or list(st.session_state.energy_yield_tab4["Pair"]) != PAIRS):
+            or list(st.session_state.energy_yield_tab4["Pair"]) != PAIRS
+            # A session created before the CSV-seeded defaults existed is still sitting
+            # at the old 0.0 placeholder — safe to refresh since the user never edited it.
+            or _still_at_zero_tab4(st.session_state.energy_yield_tab4)):
         st.session_state.energy_yield_tab4 = pd.DataFrame({
             "Pair": PAIRS,
             "Energy per Cycle (kWh)": [pair_plant_defaults[p][0] for p in PAIRS],
