@@ -1,9 +1,26 @@
 # === Streamlit App: Interleaved Desorption Scheduling ===
+import os
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import joblib
+
+# Real plant cycle log (Cycle #, Module, Start Time, DES CO2 (kg), DES Hours,
+# BAG CO2 (kg), DES Vol Cap, eTotal kWh) used to seed realistic default
+# Energy/Yield-per-cycle values in the Advanced Interleaved tab, instead of 0.0.
+PLANT_CYCLES_CSV = os.path.join(os.path.dirname(__file__), "carbonnest_plant_cycles.csv")
+
+def load_plant_cycle_defaults():
+    """Return (avg eTotal kWh, avg DES CO2 kg) from the plant cycle log, or (0.0, 0.0)
+    if the file is missing or malformed."""
+    try:
+        plant_cycles_df = pd.read_csv(PLANT_CYCLES_CSV)
+        avg_energy = round(float(plant_cycles_df["eTotal kWh"].mean()), 2)
+        avg_yield = round(float(plant_cycles_df["DES CO2 (kg)"].mean()), 2)
+        return avg_energy, avg_yield
+    except (FileNotFoundError, KeyError, ValueError):
+        return 0.0, 0.0
 
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
@@ -2008,14 +2025,20 @@ with tab4:
         for pair in PAIRS
     }
 
+    default_energy_per_cycle, default_yield_per_cycle = load_plant_cycle_defaults()
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
+    st.caption(
+        f"Defaults below are the plant-wide averages from carbonnest_plant_cycles.csv: "
+        f"{default_energy_per_cycle} kWh/cycle (avg eTotal kWh), {default_yield_per_cycle} kg CO2/cycle (avg DES CO2). "
+        "Edit per pair if a pair's real output differs."
+    )
     if ("energy_yield_tab4" not in st.session_state
             or "Pair" not in st.session_state.energy_yield_tab4.columns
             or list(st.session_state.energy_yield_tab4["Pair"]) != PAIRS):
         st.session_state.energy_yield_tab4 = pd.DataFrame({
             "Pair": PAIRS,
-            "Energy per Cycle (kWh)": [0.0] * len(PAIRS),
-            "Yield per Cycle (kg CO2)": [0.0] * len(PAIRS),
+            "Energy per Cycle (kWh)": [default_energy_per_cycle] * len(PAIRS),
+            "Yield per Cycle (kg CO2)": [default_yield_per_cycle] * len(PAIRS),
         })
     energy_yield_tab4 = st.data_editor(
         st.session_state.energy_yield_tab4,
