@@ -2662,60 +2662,28 @@ with tab5:
         ])
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
-        st.markdown("### Total Cycles, Yield, and Energy by Process")
-        fig_bars, bar_axes = plt.subplots(1, 3, figsize=(15, 4.5))
-        bar_metrics = ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)"]
-        for ax, metric in zip(bar_axes, bar_metrics):
-            values = [comparison[p][metric] for p in available_processes]
-            bars = ax.bar(
-                available_processes, values,
-                color=[PROCESS_COLORS[p] for p in available_processes],
-                edgecolor="black", alpha=0.9,
+        st.markdown("### Compare a parameter across processes")
+        selected_metric = st.selectbox(
+            "Parameter",
+            ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)"],
+            key="comparison_metric",
+        )
+        values = [comparison[p][selected_metric] for p in available_processes]
+        fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
+        bars = ax_bar.bar(
+            available_processes, values,
+            color=[PROCESS_COLORS[p] for p in available_processes],
+            edgecolor="black", alpha=0.9,
+        )
+        for bar in bars:
+            ax_bar.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
             )
-            for bar in bars:
-                ax.annotate(
-                    f"{bar.get_height():,.1f}",
-                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                    ha="center", va="bottom", fontsize=9,
-                )
-            ax.set_title(metric)
-            ax.set_ylabel(metric)
-            ax.tick_params(axis="x", rotation=15)
-            ax.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
+        ax_bar.set_title(f"{selected_metric} by Process")
+        ax_bar.set_ylabel(selected_metric)
+        ax_bar.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
         plt.tight_layout()
-        st.pyplot(fig_bars)
-        plt.close(fig_bars)
-
-        st.markdown("### Yield & Energy vs. Cycles")
-        st.caption("Each point is one process — further right means more cycles; higher means more output per that metric.")
-        rel_col1, rel_col2 = st.columns(2)
-        with rel_col1:
-            fig_yield, ax_yield = plt.subplots(figsize=(6, 5))
-            for p in available_processes:
-                ax_yield.scatter(
-                    comparison[p]["Total Cycles"], comparison[p]["Total Yield (kg CO2)"],
-                    s=160, color=PROCESS_COLORS[p], edgecolor="black", label=p, zorder=3,
-                )
-            ax_yield.set_xlabel("Total Cycles")
-            ax_yield.set_ylabel("Total Yield (kg CO2)")
-            ax_yield.set_title("Yield vs Cycles")
-            ax_yield.grid(True, alpha=0.3)
-            ax_yield.legend(fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig_yield)
-            plt.close(fig_yield)
-        with rel_col2:
-            fig_energy, ax_energy = plt.subplots(figsize=(6, 5))
-            for p in available_processes:
-                ax_energy.scatter(
-                    comparison[p]["Total Cycles"], comparison[p]["Total Energy (kWh)"],
-                    s=160, color=PROCESS_COLORS[p], edgecolor="black", label=p, zorder=3,
-                )
-            ax_energy.set_xlabel("Total Cycles")
-            ax_energy.set_ylabel("Total Energy (kWh)")
-            ax_energy.set_title("Energy vs Cycles")
-            ax_energy.grid(True, alpha=0.3)
-            ax_energy.legend(fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig_energy)
-            plt.close(fig_energy)
+        st.pyplot(fig_bar)
+        plt.close(fig_bar)
