@@ -118,48 +118,30 @@ def load_stage_duration_defaults_by_pair(pairs):
         }
     return defaults
 
-# Adsorption for the two module combinations runs in parallel rather than
-# stacking sequentially like the desorption-chain phases do, so it's sourced from
-# just this one combination instead of being summed (or averaged) across both.
-TAB3_ADSORPTION_MODULE = "N1N2N3-M1n3"
+# Phase durations for Full Schedule Analysis's two pairs are sourced directly from
+# this one module combination's own per-phase averages — no summing with N3-M2n4
+# (that summing is still used for the Energy/Yield table above, which is a
+# separate, deliberately different sourcing choice).
+TAB3_PHASE_DURATION_MODULE = "N1N2N3-M1n3"
 
 def load_stage_duration_defaults_tab3():
     """Return {phase: avg minutes}, the shared phase-duration default for both
-    Group A and Group B in Full Schedule Analysis. Every phase except Adsorption is
-    SUMMED across TAB3_PLANT_MODULES (N1N2N3-M1n3 + N3-M2n4), since those module
-    combinations run their desorption chains sequentially and share the same
-    equipment. Adsorption instead comes from TAB3_ADSORPTION_MODULE alone. Falls
-    back to CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no rows for
-    the relevant module(s)."""
+    Group A and Group B in Full Schedule Analysis, sourced directly from
+    TAB3_PHASE_DURATION_MODULE's own per-phase averages (no summing). Falls back
+    to CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no matching rows."""
     try:
         stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
     except (FileNotFoundError, KeyError, ValueError):
         return dict(CORE_PHASE_FALLBACK_DURATIONS)
 
-    per_module_phase_avg = {}
-    for module in TAB3_PLANT_MODULES:
-        subset = stage_df[stage_df["Module"] == module]
-        if len(subset) == 0:
-            continue
-        per_module_phase_avg[module] = {
-            phase: float(subset[cols].sum(axis=1).mean())
-            for phase, cols in STAGE_PHASE_COLUMNS.items()
-        }
-    if not per_module_phase_avg:
+    subset = stage_df[stage_df["Module"] == TAB3_PHASE_DURATION_MODULE]
+    if len(subset) == 0:
         return dict(CORE_PHASE_FALLBACK_DURATIONS)
 
-    result = {}
-    for phase in STAGE_PHASE_COLUMNS:
-        if phase == "Adsorption":
-            adsorption_avgs = per_module_phase_avg.get(TAB3_ADSORPTION_MODULE)
-            result[phase] = (
-                round(adsorption_avgs["Adsorption"], 1) if adsorption_avgs
-                else CORE_PHASE_FALLBACK_DURATIONS["Adsorption"]
-            )
-        else:
-            values = [avgs[phase] for avgs in per_module_phase_avg.values()]
-            result[phase] = round(sum(values), 1)
-    return result
+    return {
+        phase: round(float(subset[cols].sum(axis=1).mean()), 1)
+        for phase, cols in STAGE_PHASE_COLUMNS.items()
+    }
 
 def get_versioned_default_table(state_key, expected_columns, version, build_fn):
     """Return st.session_state[state_key], rebuilding it via build_fn() if it's
@@ -1044,11 +1026,11 @@ with tab3:
     st.caption("Phase durations (minutes) — edit directly in the table")
     default_phase_durations_tab3 = load_stage_duration_defaults_tab3()
     st.caption(
-        "Defaults for both pairs are seeded from carbonnest_stage_timestamps.csv as the sum of the "
-        f"N1N2N3-M1n3 and N3-M2n4 cycle averages: {default_phase_durations_tab3}. "
+        "Defaults for both pairs are seeded from carbonnest_stage_timestamps.csv using the "
+        f"N1N2N3-M1n3 cycle average: {default_phase_durations_tab3}. "
         "Edit per pair if a pair's real durations differ."
     )
-    PHASE_DURATIONS_TAB3_VERSION = 3  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
+    PHASE_DURATIONS_TAB3_VERSION = 4  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
     get_versioned_default_table(
         "phase_durations_tab3", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_VERSION,
         lambda: pd.DataFrame({
