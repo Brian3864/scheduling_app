@@ -85,6 +85,14 @@ STAGE_PHASE_COLUMNS = {
     "Cooling": ["Cooling (min)"],
 }
 
+# Original hand-picked phase durations, used as a fallback wherever the stage log
+# is missing or has no matching rows (Advanced Interleaved adds a 7th,
+# Repressurization, which the log has no equivalent column for at all).
+CORE_PHASE_FALLBACK_DURATIONS = {
+    "Adsorption": 25, "Evacuation": 7, "NCG Purging": 2,
+    "Heating": 20, "CO2 Purging": 40, "Cooling": 30,
+}
+
 # The log has no Repressurization column at all, so that phase always keeps
 # whatever value is already in the table (originally defaulted to 5 minutes).
 def load_stage_duration_defaults_by_pair(pairs):
@@ -109,6 +117,29 @@ def load_stage_duration_defaults_by_pair(pairs):
             for phase, cols in STAGE_PHASE_COLUMNS.items()
         }
     return defaults
+
+def load_stage_duration_defaults_tab3():
+    """Return {phase: avg minutes} summed across TAB3_PLANT_MODULES (N1N2N3-M1n3 +
+    N3-M2n4), used as the shared phase-duration default for both Group A and
+    Group B in Full Schedule Analysis. Falls back to CORE_PHASE_FALLBACK_DURATIONS
+    if the log is missing or has no rows for either module."""
+    try:
+        stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
+    except (FileNotFoundError, KeyError, ValueError):
+        return dict(CORE_PHASE_FALLBACK_DURATIONS)
+
+    totals = {phase: 0.0 for phase in STAGE_PHASE_COLUMNS}
+    found_any = False
+    for module in TAB3_PLANT_MODULES:
+        subset = stage_df[stage_df["Module"] == module]
+        if len(subset) == 0:
+            continue
+        found_any = True
+        for phase, cols in STAGE_PHASE_COLUMNS.items():
+            totals[phase] += float(subset[cols].sum(axis=1).mean())
+    if not found_any:
+        return dict(CORE_PHASE_FALLBACK_DURATIONS)
+    return {phase: round(total, 1) for phase, total in totals.items()}
 
 def get_versioned_default_table(state_key, expected_columns, version, build_fn):
     """Return st.session_state[state_key], rebuilding it via build_fn() if it's
@@ -991,24 +1022,29 @@ with tab3:
             help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once."
         )
     st.caption("Phase durations (minutes) — edit directly in the table")
-    if "phase_durations_tab3" not in st.session_state:
-        st.session_state.phase_durations_tab3 = pd.DataFrame({
+    default_phase_durations_tab3 = load_stage_duration_defaults_tab3()
+    st.caption(
+        "Defaults for both pairs are seeded from carbonnest_stage_timestamps.csv as the sum of the "
+        f"N1N2N3-M1n3 and N3-M2n4 cycle averages: {default_phase_durations_tab3}. "
+        "Edit per pair if a pair's real durations differ."
+    )
+    PHASE_DURATIONS_TAB3_VERSION = 1  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
+    get_versioned_default_table(
+        "phase_durations_tab3", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_VERSION,
+        lambda: pd.DataFrame({
             "Phase": PHASES,
-            "Group A (min)": [25, 7, 2, 20, 40, 30],
-            "Group B (min)": [25, 7, 2, 20, 40, 30],
-        })
-    df = st.session_state.phase_durations_tab3.copy()
-    if "Capacity" in df.columns:
-        df = df.drop(columns=["Capacity"])
-        st.session_state.phase_durations_tab3 = df
+            "Group A (min)": [default_phase_durations_tab3[phase] for phase in PHASES],
+            "Group B (min)": [default_phase_durations_tab3[phase] for phase in PHASES],
+        }),
+    )
     phase_edited = st.data_editor(
         st.session_state.phase_durations_tab3,
         use_container_width=True,
         hide_index=True,
         column_config={
             "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=120, default=25, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=120, default=25, required=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, default=25, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, default=25, required=True),
         },
         key="phase_durations_editor_tab3",
     )
@@ -2105,11 +2141,10 @@ with tab4:
     PAIRS = ["Group A", "Group B", "Group C"]
     adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
 
-    # Original hand-picked defaults, used as a fallback for any phase/pair the stage
-    # log doesn't cover (e.g. Repressurization, or if the CSV is missing).
+    # Fallback for any phase/pair the stage log doesn't cover (e.g. Repressurization,
+    # which has no equivalent log column, or if the CSV is missing).
     FALLBACK_PHASE_DURATIONS = {
-        "Adsorption": 25, "Evacuation": 7, "NCG Purging": 2,
-        "Heating": 20, "CO2 Purging": 40, "Cooling": 30, "Repressurization": 5,
+        **CORE_PHASE_FALLBACK_DURATIONS, "Repressurization": 5,
     }
     stage_defaults_by_pair = load_stage_duration_defaults_by_pair(PAIRS)
     # Bump whenever STAGE_PHASE_COLUMNS' mapping (which source columns feed which
