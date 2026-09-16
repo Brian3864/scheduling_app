@@ -36,6 +36,10 @@ st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe
 tab1, tab2, tab3, tab4 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved"])
 
 if False:  # Module pair analysis removed (fan pairing fixed)
+          # Everything inside this `if False:` block is DISABLED and never runs — it's
+          # earlier fan-pairing scheduling code kept only for reference. It has been
+          # superseded by the live tabs below (tab1-tab4). Skip this block if you're
+          # trying to understand the app's current behavior.
           # ===============================
      # Serialized/Interleaved simulator WITH FAN-PAIRING (A→…→C order preserved)
      # CORRECTED: 2-slot D-chain lock in Serialized mode + per-module durations
@@ -50,6 +54,7 @@ if False:  # Module pair analysis removed (fan pairing fixed)
           # ===============================
 
           def _build_fan_map(modules, fan_pairs):
+              """Assign each module a shared-fan group id so paired modules can't adsorb at the same time."""
               fan_of = {}
               next_fan = 0
               pairs = fan_pairs or []
@@ -87,9 +92,12 @@ if False:  # Module pair analysis removed (fan pairing fixed)
               cooling_capacity=None,
               PER_MODULE_DURATIONS=None
           ):
+              """Full multi-module scheduler with shared-fan exclusivity and a locked D-chain
+              (Evacuation->NCG Purging->Heating->CO2 Purging) slot system. Superseded by the
+              live tabs; not used."""
               import numpy as np
               import pandas as pd
-          
+
               if MODULE_DELAYS is None:
                   MODULE_DELAYS = {m: 0 for m in MODULES}
               if PHASE_GAPS is None:
@@ -140,20 +148,24 @@ if False:  # Module pair analysis removed (fan pairing fixed)
           
               # ---------------- Helpers ----------------
               def can_phase(phase, s, d, usage, lim):
+                  """True if [s, s+d) fits within phase's capacity limit."""
                   e = s + d
                   return e <= TOTAL_MINUTES and np.all(usage[phase][s:e] < lim)
-          
+
               def reserve_phase(phase, s, d, usage):
+                  """Mark [s, s+d) as occupied for this phase."""
                   usage[phase][s:s+d] += 1
-          
+
               def can_fan(mod, phase, s, d, _fans):
+                  """True if this module's shared fan is free for [s, s+d) during Adsorption."""
                   if not ads_fan_exclusive or phase != "Adsorption":
                       return True
                   e = s + d
                   fid = fan_of[mod]
                   return e <= TOTAL_MINUTES and np.all(_fans[fid][s:e] == 0)
-          
+
               def reserve_fan(mod, phase, s, d, _fans):
+                  """Occupy this module's shared fan for [s, s+d) during Adsorption."""
                   if ads_fan_exclusive and phase == "Adsorption":
                       fid = fan_of[mod]
                       _fans[fid][s:s+d] += 1
@@ -291,6 +303,7 @@ if False:  # Module pair analysis removed (fan pairing fixed)
               return df_schedule, steam_profile, resource_usage
           
           def count_complete_cycles(df_schedule, MODULES, PHASES):
+              """Count, per module, how many times its scheduled phases form one full PHASES sequence in order."""
               out = []
               for mod in MODULES:
                   md = df_schedule[df_schedule["Module"] == mod].sort_values("Start").reset_index(drop=True)
@@ -312,7 +325,7 @@ if False:  # Module pair analysis removed (fan pairing fixed)
               return throughput_df
           
           def create_combined_metrics(df_schedule, cycles_df, modules, total_minutes, module_co2_capture):
-              """Create a combined metrics table olycles, CO2, utilization, and active minutes."""
+              """Create a combined metrics table: cycles, CO2, utilization, and active minutes."""
               # Get utilization data
               util_data = []
               for mod in modules:
@@ -396,6 +409,7 @@ if False:  # Module pair analysis removed (fan pairing fixed)
               return fig
           
           def plot_gantt(df, modules, module_labels, phases, total_minutes, title):
+              """Draw a per-module horizontal bar (Gantt) chart, one row per module, colored by phase."""
               colors = {
                   'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
                   'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'
@@ -690,6 +704,9 @@ if False:  # Module pair analysis removed (fan pairing fixed)
      
 with tab1:
 # === INDIVIDUAL MODULE OPERATION ===
+# "General Test": the simplest scheduler in the app. Every module runs the same
+# two phases (Adsorption, Desorption) back to back, sharing two capacity-limited
+# resource pools, for as many complete cycles as fit in the operating period.
     st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
 
@@ -721,13 +738,18 @@ with tab1:
 
 # === SCHEDULING FUNCTIONS ===
     def can_allocate(phase, start, duration):
+        """True if every minute of [start, start+duration) still has spare capacity for this phase."""
         return all(resource_usage[phase][t] < RESOURCE_LIMITS[phase] for t in range(start, start + duration))
 
     def reserve(phase, start, duration):
+        """Occupy one capacity slot of this phase for every minute in [start, start+duration)."""
         for t in range(start, start + duration):
             resource_usage[phase][t] += 1
 
 # === SCHEDULING LOOP ===
+# Repeatedly sweep all modules, giving each the next phase in its cycle as soon as
+# capacity allows, until a full pass places nothing new (either the operating period
+# is used up or every module is waiting on a full resource).
     while True:
         progress = False
         for mod in MODULES:
@@ -735,6 +757,8 @@ with tab1:
             cycle_phases = []
             for phase in PHASES:
                 duration = PHASE_DURATIONS[phase]
+                # Look for the earliest minute, from this module's current time onward,
+                # where the phase's resource pool has a free slot.
                 while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
                     t += 1
                 if t + duration > TOTAL_MINUTES:
@@ -742,6 +766,8 @@ with tab1:
                 cycle_phases.append((phase, t, t + duration))
                 reserve(phase, t, duration)
                 t += duration
+            # Only commit this module's phases if it completed the FULL phase list
+            # (Adsorption + Desorption) — a partial cycle at the end of the period is dropped.
             if len(cycle_phases) == len(PHASES):
                 for phase, start, end in cycle_phases:
                     schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
@@ -753,6 +779,8 @@ with tab1:
     df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
 
 # === FLEXIBLE CYCLE COUNT ===
+# Count each module's complete cycles by sliding a window over its scheduled phases
+# and matching it against the expected phase order (handles any leftover/partial rows).
     cycle_counts = []
     for mod in MODULES:
         mod_df = df_schedule[df_schedule['Module'] == mod].sort_values(by='Start').reset_index(drop=True)
@@ -793,6 +821,14 @@ with tab1:
     st.pyplot(fig)
  
 with tab3:
+    # "Full Schedule Analysis": the app's main scheduler. Every module runs the full
+    # 6-phase cycle (Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging
+    # -> Cooling), split into Group A (odd module numbers) and Group B (even), with
+    # shared capacity pools between groups. The tab runs three variants side by side
+    # for comparison: Baseline (Group A alone, no sharing), Concurrent (a single
+    # combined desorption+cooling cap), and Interleaved (separate Evacuation/Cooling
+    # and NCG+Heating+CO2 shared pools, with Evacuation able to pause a pair's
+    # Cooling). See run_simulation() below for the actual scheduling logic.
     # === PHASES ===
     PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
     DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'}
@@ -904,6 +940,7 @@ with tab3:
     }
 
     def adjusted_duration(phase, base_duration):
+        """Pass-through hook for per-phase duration tweaks; currently just returns the base duration unchanged."""
         return int(base_duration)
 
     # Idle time required between specific phase transitions (in minutes)
@@ -926,6 +963,8 @@ with tab3:
     selected_delay = 0 # Default value, will be updated based on user choice
 
     def build_module_delays(offset, group_ids, group_of):
+        """Stagger each group's start time by `offset` minutes (Group A starts at 0,
+        Group B at 1x offset, etc.) so their phases interleave instead of colliding."""
         group_index = {g: i for i, g in enumerate(group_ids)}
         return {m: group_index[group_of[m]] * offset for m in MODULES}
 
@@ -954,6 +993,11 @@ with tab3:
         adsorption_dur_uniform = int(phase_durations_config["Adsorption"]) if not phase_durations_by_group else None
 
         def can_allocate_internal(phase, start, duration, current_resource_state):
+            """True if this phase has spare shared-resource capacity for the whole
+            [start, start+duration) window, under the given desorption mode's rules
+            (Adsorption's own cap, Baseline's per-phase caps, Interleaved's shared
+            Evacuation/Cooling and NCG+Heating+CO2 pools, or Concurrent's single
+            desorption-wide cap)."""
             end_time = start + duration
             if end_time > TOTAL_MINUTES or start < 0:
                 return False
@@ -996,11 +1040,15 @@ with tab3:
             return True
 
         def reserve_internal(phase, start, duration, current_resource_state):
+            """Occupy one capacity slot of this phase for every minute in [start, start+duration)."""
             end_time = start + duration
             end_safe = min(end_time, TOTAL_MINUTES)
             current_resource_state[phase][start:end_safe] += 1
 
         def evac_cool_conflict_internal(phase, start, duration, current_resource_state, mod):
+            """True only for a Cooling attempt that overlaps another module's Evacuation
+            (Interleaved mode, with the 'Evacuation Overrides Cooling' checkbox on).
+            The caller uses this to make Cooling pause rather than block outright."""
             if baseline_mode or current_desorption_mode != "Interleaved":
                 return False
 
@@ -1028,16 +1076,23 @@ with tab3:
         # Respect group pairings (odd=Group A, even=Group B): process Group A first, then Group B
         mod_order = sorted(modules, key=lambda m: (group_of.get(m, "A") != "A", m))
         progress_made = True
+        # Main scheduling loop: repeatedly sweep every module, advancing each by one
+        # more phase per pass, until a full sweep places nothing new (the operating
+        # period is exhausted for every module). This is the same greedy pattern as
+        # tab1/tab2, generalized to N modules across two groups with shared resources.
         while progress_made:
             progress_made = False
             for mod in mod_order:
                 t = module_timers[mod]
                 cycle_phases = []
                 group_id = group_of[mod]
-                
+
+                # Work on a scratch copy of resource usage so a module's whole next
+                # phase can be tried and rolled back (via cycle_success) without
+                # corrupting the shared state if it turns out not to fit.
                 temp_resource_usage_for_cycle = {phase: np.copy(resource_usage[phase]) for phase in PHASES}
                 cycle_success = True
-                
+
                 for phase in PHASES:
                     if phase == "Adsorption" and adsorption_dur_uniform is not None:
                         duration = adsorption_dur_uniform
@@ -1045,11 +1100,15 @@ with tab3:
                         base_dur = phase_durations_by_group[group_id][phase] if phase_durations_by_group else phase_durations_config[phase]
                         duration = adjusted_duration(phase, base_dur)
 
+                    # Find the earliest minute, from t onward, where this phase can start.
                     attempt_start = t
                     conflict_hit = False
                     while attempt_start + duration <= TOTAL_MINUTES:
                         if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle, mod):
-                            # Delay Cooling by the OTHER group's Evacuation duration from the table
+                            # This is a Cooling attempt colliding with the other group's
+                            # Evacuation. Rather than scan minute-by-minute, jump the
+                            # search forward by that Evacuation's full duration (from the
+                            # phase-duration table) and retry from there.
                             this_group = group_of[mod]
                             other_group = "B" if this_group == "A" else "A"
                             pause_minutes = int(PHASE_DURATIONS_BY_GROUP[other_group]["Evacuation"])
@@ -1070,6 +1129,8 @@ with tab3:
                         attempt_start += 1
 
                     if attempt_start + duration > TOTAL_MINUTES:
+                        # No valid start time left before the operating period ends —
+                        # this module doesn't get another complete cycle.
                         cycle_success = False
                         break
 
@@ -1082,7 +1143,13 @@ with tab3:
                     # t = attempt_start + duration
 
                     if phase == "Cooling" and allow_cooling_pause:
-
+                        # Cooling actually pauses here (separate from the search above,
+                        # which only found a valid *start* time). Even after Cooling has
+                        # begun, an Evacuation elsewhere can still start mid-way through
+                        # it; this walks minute-by-minute through the Cooling duration
+                        # and splits it into multiple (start, end) segments around any
+                        # such conflicts, so Cooling stops for the conflict and resumes
+                        # for its remaining time as soon as Evacuation frees up.
                         remaining = duration
                         cooling_segments = []
                         current_start = attempt_start
@@ -1091,6 +1158,7 @@ with tab3:
 
                             evac_busy = temp_resource_usage_for_cycle["Evacuation"]
 
+                            # Scan forward for the next minute Evacuation is active.
                             next_conflict = None
 
                             for t_check in range(
@@ -1102,13 +1170,15 @@ with tab3:
                                     break
 
                             if next_conflict is None:
+                                # No conflict for the rest of the remaining duration —
+                                # run straight through to the end.
                                 cooling_segments.append(
                                     (current_start, current_start + remaining)
                                 )
                                 remaining = 0
 
                             else:
-
+                                # Close out the segment that ran up to the conflict...
                                 if next_conflict > current_start:
 
                                     run_time = next_conflict - current_start
@@ -1119,6 +1189,8 @@ with tab3:
 
                                     remaining -= run_time
 
+                                # ...then skip forward past the whole Evacuation window
+                                # before resuming the search for the next segment.
                                 pause_end = next_conflict
 
                                 while (
@@ -1129,6 +1201,9 @@ with tab3:
 
                                 current_start = pause_end
 
+                        # Reserve and record each Cooling segment as its own scheduled
+                        # block (this is why a single Cooling "phase" can show up as
+                        # more than one bar on the Gantt chart when it was paused).
                         for seg_start, seg_end in cooling_segments:
 
                             reserve_internal(
@@ -1185,6 +1260,9 @@ with tab3:
         optimization_summary_df = None
 
         def count_complete_cycles_df(df_schedule):
+            """Count each module's completed cycles by sliding a window over its scheduled
+            phases and matching it against the full PHASES order; returns one row per
+            module with a "M<n>"-formatted label."""
             cycle_counts = []
             for mod in MODULES:
                 mod_df = df_schedule[df_schedule["Module"] == mod].sort_values(by="Start").reset_index(drop=True)
@@ -1206,6 +1284,9 @@ with tab3:
             st.info("Running optimization to find the best delay (both modes)...")
 
             def optimize_offsets(group_ids, group_of):
+                """Brute-force search over Group B start offsets (0..OPT_MAX_DELAY minutes)
+                to find the one that yields the most total Interleaved-mode cycles; also
+                records the Concurrent-mode cycle count at each offset for comparison."""
                 best_delay = 0
                 best_cycles_int = -1
                 delay_search_range = range(0, OPT_MAX_DELAY + 1, OPT_STEP)
@@ -1288,6 +1369,10 @@ with tab3:
             return [(s, e - s) for s, e in merged]
 
         def pair_complete_cycles(schedule_df, group_ids):
+            """For each group, merge all its modules' Adsorption windows into one
+            timeline and count the distinct (non-overlapping) spans — this is a pair's
+            "Total Cycles", matching what's visually countable on the merged Gantt
+            chart rather than summing each module's own cycle count."""
             rows = []
             for gid in group_ids:
                 mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
@@ -1324,6 +1409,9 @@ with tab3:
         st.caption("Total Yield/Energy = a pair's Total Cycles (above) × the per-cycle rate entered for that pair.")
 
         def pair_yield_energy(pair_totals_df):
+            """Multiply each pair's Total Cycles by the per-cycle Energy/Yield rate
+            entered for that pair (PAIR_*_PER_CYCLE_TAB3) to get plant output totals,
+            plus a derived kg CO2 per kWh efficiency figure."""
             df = pair_totals_df.copy()
             gids = df["Pair"].str.replace("Group ", "", regex=False)
             df["Total Yield (kg CO2)"] = [
@@ -1388,6 +1476,12 @@ with tab3:
         desorption_set = DESORPTION_PHASES | {'Cooling'}
 
         def draw_gantt(ax, plot_df, colors, is_concurrent, title):
+            """Draw a 2-row (Group A / Group B) Gantt chart from a per-module schedule.
+            Since several modules in the same group can be in the same phase at once,
+            each group's activity is merged (via merge_intervals) into single bars per
+            phase, so overlapping module activity shows as one continuous block instead
+            of stacked/duplicate bars. Concurrent mode only distinguishes Adsorption vs.
+            "locked" desorption; Interleaved mode shows each phase in its own color."""
             plot_df = plot_df.copy()
             plot_df['Group'] = plot_df['Module'].apply(lambda m: GROUP_OF.get(int(m)))
             if is_concurrent:
@@ -1686,6 +1780,10 @@ with tab3:
             plt.close(fig_phase2)
 
 with tab2:
+    # "M2&M4 + LRVP": fixed two-module (M2, M4) full 6-phase cycle, used to visualize
+    # how a staggered start delay (M4 starts `delay_m4` minutes after M2) plays out,
+    # with an optional "Concurrent" mode that locks the whole desorption chain +
+    # Cooling to one module at a time.
     # === MODULES ===
     MODULES = ["M2", "M4"]
 
@@ -1741,12 +1839,17 @@ with tab2:
     desorption_lock_time = 0
 
     def can_allocate(phase, start, duration):
+        """True if this phase is completely free (no other module in it) for [start, start+duration)."""
         return all(resource_usage[phase][t] == 0 for t in range(start, start + duration))
 
     def reserve(phase, start, duration):
+        """Mark [start, start+duration) as occupied for this phase."""
         for t in range(start, start + duration):
             resource_usage[phase][t] += 1
 
+    # Same greedy "advance each module through its phases in turn" loop as tab1/tab3,
+    # but with only one slot per phase (can_allocate requires it to be fully free),
+    # plus an extra Concurrent-mode rule below.
     while True:
         progress = False
         for mod in MODULES:
@@ -1754,6 +1857,9 @@ with tab2:
             cycle_phases = []
             for phase in PHASES:
                 duration = PHASE_DURATIONS[phase]
+                # Concurrent mode: a module can't start its desorption chain until the
+                # previous module has finished Cooling (desorption_lock_time), so the
+                # whole Evacuation->...->Cooling block runs for one module at a time.
                 if desorption_mode == "Concurrent" and phase in DESORPTION_PHASES:
                     t = max(t, desorption_lock_time)
                 while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
@@ -1763,6 +1869,8 @@ with tab2:
                 cycle_phases.append((phase, t, t + duration))
                 reserve(phase, t, duration)
                 if desorption_mode == "Concurrent" and phase == 'Cooling':
+                    # This module just finished Cooling; the next module's desorption
+                    # chain can't begin any earlier than this.
                     desorption_lock_time = t + duration
                 t += duration
             if len(cycle_phases) == len(PHASES):
@@ -1833,6 +1941,10 @@ with tab2:
     st.markdown("**Stage 1:** Cooling & Adsorption | **Stage 2:** Evacuation, NCG Purging, Heating, CO2 Purging")
 
 with tab4:
+    # "Advanced Interleaved": a 3-pair (Group A/B/C) plant-level scheduler with a
+    # 7-phase cycle that adds Repressurization after Cooling. Unlike tab3, this
+    # schedules whole pairs as single units (not individual modules) — see
+    # run_advanced_interleaved() below for the actual scheduling rules.
     st.subheader("Advanced Interleaved - 3 Pair Scheduling")
 
     PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling','Repressurization' ]
@@ -1929,17 +2041,27 @@ with tab4:
 
     def run_advanced_interleaved():
         """
-        Advanced 3-pair interleaved scheduler.
+        Advanced 3-pair interleaved scheduler. Builds a schedule by repeatedly giving
+        each pair its next phase group as soon as that phase group's shared resource
+        is free, until nothing more can be scheduled before TOTAL_MINUTES_ADV runs out.
 
         Sequence per pair:
         Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging -> Cooling -> Repressurization
 
-        Rules:
+        Rules actually enforced below:
         - Group A can overlap adsorption with Group B and Group C.
         - Group B and Group C adsorption cannot overlap each other.
-        - Only one pair can be in Desorption chain at a time.
-        - Only one pair can be in Cooling at a time.
-        - Evacuation can only begin when another pair is in Repressurization.
+        - Only one pair can be in the Desorption chain (Evacuation..CO2 Purging) at a time
+          — tracked via resource_ready_time["Desorption"].
+        - Only one pair can be in Cooling at a time — tracked via
+          resource_ready_time["Cooling"] — but a pair's Cooling will pause (see below)
+          rather than wait outright if another pair's Evacuation overlaps it.
+        - Only one pair can be in Repressurization at a time — tracked via
+          resource_ready_time["Repressurization"].
+
+        Different pairs start staggered into different phase groups (see
+        pair_next_phase below) precisely so they don't all compete for the same
+        shared resource at once.
         """
 
         schedule = []
@@ -1952,18 +2074,24 @@ with tab4:
             "CO2 Purging"
         ]
 
+        # Stagger the three pairs across different phase groups from the start, so
+        # they aren't all trying to claim the same shared resource in the first pass.
         pair_next_phase = {
             "Group A": "Adsorption",
             "Group B": "Desorption",
             "Group C": "Cooling",
         }
 
+        # Each pair's own local clock: the earliest minute IT is free to start its
+        # next phase (independent of whether the shared resource for that phase is free).
         pair_ready_time = {
             "Group A": 0,
             "Group B": 0,
             "Group C": 0,
         }
 
+        # Shared, plant-wide resources: the earliest minute each one is free for the
+        # NEXT pair to use, regardless of which pair is asking.
         resource_ready_time = {
             "Desorption": 0,
             "Cooling": 0,
@@ -1992,6 +2120,9 @@ with tab4:
 
         # return best_start
 
+        # Main loop: sweep the three pairs, advancing each by one phase group per pass,
+        # until a full pass makes no progress (every pair is either done or blocked by
+        # the operating-period limit).
         while True:
             progress = False
 
@@ -2029,11 +2160,14 @@ with tab4:
                     progress = True
 
                 elif phase_group == "Desorption":
+                    # Earliest this pair can start is whichever is later: its own
+                    # readiness, or the shared Desorption resource being free.
                     earliest_start = max(pair_ready_time[pair], resource_ready_time["Desorption"])
-
-                    # Evacuation cannot start unless another pair is in Repressurization
                     start = earliest_start
 
+                    # Schedule the whole Evacuation -> NCG Purging -> Heating -> CO2
+                    # Purging chain back-to-back as one block; the shared "Desorption"
+                    # resource is held for its full total_desorption_duration.
                     phase_start = start
                     total_desorption_duration = sum(
                         PHASE_DURATIONS_BY_PAIR[pair][phase]
@@ -2125,6 +2259,7 @@ with tab4:
                     progress = True
 
                 elif phase_group == "Repressurization":
+                    # Final phase of the cycle; frees the pair back to Adsorption once done.
                     start = max(pair_ready_time[pair], resource_ready_time["Repressurization"])
                     duration = PHASE_DURATIONS_BY_PAIR[pair]["Repressurization"]
                     end = start + duration
@@ -2162,6 +2297,11 @@ with tab4:
         cycle_rows = []
         for pair in PAIRS:
             pair_df = adv_schedule[adv_schedule["Pair"] == pair]
+            # Each full cycle contributes one scheduled row per phase in PHASES, so
+            # total rows / phase count gives the completed-cycle count. Note: if a
+            # Cooling phase got split into multiple segments (paused for another
+            # pair's Evacuation), that cycle has one extra row, which can make this
+            # a slight undercount versus the true cycle count.
             complete_cycles = len(pair_df) // len(PHASES)
             cycle_rows.append({
                 "Pair": pair,
