@@ -66,6 +66,49 @@ def load_plant_cycle_defaults_tab3():
         yield_total += co2
     return round(energy_total, 2), round(yield_total, 2)
 
+# Real per-stage duration log (Cycle #, Module, Adsorption/Evacuation/Preheating/
+# NCGs Purging/NCGs Purging-Heating/Heating-CO2 Purging/CO2 Purging/Cooling, all in
+# minutes) used to seed realistic default phase durations in Advanced Interleaved.
+STAGE_TIMESTAMPS_CSV = os.path.join(os.path.dirname(__file__), "carbonnest_stage_timestamps.csv")
+
+# The source log doesn't have a standalone "Heating" column or an app-equivalent
+# "Preheating" phase, so: Preheating is folded into Evacuation (it happens right
+# after Evacuation, before NCG Purging), and both "in-between" transition columns
+# are folded entirely into Heating (there's no other Heating figure to use).
+STAGE_PHASE_COLUMNS = {
+    "Adsorption": ["Adsorption (min)"],
+    "Evacuation": ["Evacuation (min)", "Preheating (min)"],
+    "NCG Purging": ["NCGs Purging (min)"],
+    "Heating": ["NCGs Purging/Heating (min)", "Heating/CO2 Purging (min)"],
+    "CO2 Purging": ["CO2 Purging (min)"],
+    "Cooling": ["Cooling (min)"],
+}
+
+# The log has no Repressurization column at all, so that phase always keeps
+# whatever value is already in the table (originally defaulted to 5 minutes).
+def load_stage_duration_defaults_by_pair(pairs):
+    """Return {pair: {phase: avg minutes}} for the 6 phases in STAGE_PHASE_COLUMNS,
+    sourced from each pair's matching Module rows (see PAIR_PLANT_MODULE) in
+    carbonnest_stage_timestamps.csv. A pair with a missing file/module/phase simply
+    has no entry for it — callers should fall back to their own default."""
+    try:
+        stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
+    except (FileNotFoundError, KeyError, ValueError):
+        return {pair: {} for pair in pairs}
+
+    defaults = {}
+    for pair in pairs:
+        module = PAIR_PLANT_MODULE.get(pair)
+        subset = stage_df[stage_df["Module"] == module] if module else stage_df.iloc[0:0]
+        if len(subset) == 0:
+            defaults[pair] = {}
+            continue
+        defaults[pair] = {
+            phase: round(float(subset[cols].sum(axis=1).mean()), 1)
+            for phase, cols in STAGE_PHASE_COLUMNS.items()
+        }
+    return defaults
+
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
 **Tab 1: General Test**  
@@ -2046,14 +2089,43 @@ with tab4:
 
     PAIRS = ["Group A", "Group B", "Group C"]
     adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
+
+    # Original hand-picked defaults, used as a fallback for any phase/pair the stage
+    # log doesn't cover (e.g. Repressurization, or if the CSV is missing).
+    FALLBACK_PHASE_DURATIONS = {
+        "Adsorption": 25, "Evacuation": 7, "NCG Purging": 2,
+        "Heating": 20, "CO2 Purging": 40, "Cooling": 30, "Repressurization": 5,
+    }
+    stage_defaults_by_pair = load_stage_duration_defaults_by_pair(PAIRS)
+
+    def _pair_phase_durations(pair):
+        pair_defaults = stage_defaults_by_pair.get(pair, {})
+        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+
+    def _still_at_fallback_durations(df):
+        fallback_row = [FALLBACK_PHASE_DURATIONS[phase] for phase in PHASES]
+        return all(list(df[f"{p} (min)"]) == fallback_row for p in PAIRS)
+
     if ("adv_phase_durations" not in st.session_state
-            or list(st.session_state.adv_phase_durations.columns) != adv_phase_columns):
+            or list(st.session_state.adv_phase_durations.columns) != adv_phase_columns
+            # A session created before the stage-log defaults existed is still sitting
+            # at the old hand-picked defaults for every pair — safe to refresh since
+            # the user never actually edited any of them.
+            or _still_at_fallback_durations(st.session_state.adv_phase_durations)):
         st.session_state.adv_phase_durations = pd.DataFrame({
             "Phase": PHASES,
-            "Group A (min)": [25, 7, 2, 20, 40, 30, 5],
-            "Group B (min)": [25, 7, 2, 20, 40, 30, 5],
-            "Group C (min)": [25, 7, 2, 20, 40, 30, 5],
+            "Group A (min)": _pair_phase_durations("Group A"),
+            "Group B (min)": _pair_phase_durations("Group B"),
+            "Group C (min)": _pair_phase_durations("Group C"),
         })
+
+    st.caption(
+        "Defaults for Adsorption, Evacuation, NCG Purging, Heating, CO2 Purging, and Cooling are "
+        "seeded from carbonnest_stage_timestamps.csv: Group A and Group C from the N1N2N3-M1n3 "
+        "cycle average, Group B from the N1N2-M1n3 cycle average. Repressurization has no "
+        "equivalent in that log, so it keeps its original default. Edit any cell if a pair's real "
+        "durations differ."
+    )
 
     adv_phase_table = st.data_editor(
         st.session_state.adv_phase_durations,
