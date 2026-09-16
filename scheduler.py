@@ -118,15 +118,19 @@ def load_stage_duration_defaults_by_pair(pairs):
         }
     return defaults
 
+# Adsorption for the two module combinations runs in parallel rather than
+# stacking sequentially like the desorption-chain phases do, so it's sourced from
+# just this one combination instead of being summed (or averaged) across both.
+TAB3_ADSORPTION_MODULE = "N1N2N3-M1n3"
+
 def load_stage_duration_defaults_tab3():
     """Return {phase: avg minutes}, the shared phase-duration default for both
-    Group A and Group B in Full Schedule Analysis, sourced from TAB3_PLANT_MODULES
-    (N1N2N3-M1n3 + N3-M2n4). Every phase except Adsorption is SUMMED across the two
-    module combinations, since they run their desorption chains sequentially and
-    share the same equipment. Adsorption is AVERAGED instead, since the two module
-    combinations adsorb in parallel rather than stacking. Falls back to
-    CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no rows for either
-    module."""
+    Group A and Group B in Full Schedule Analysis. Every phase except Adsorption is
+    SUMMED across TAB3_PLANT_MODULES (N1N2N3-M1n3 + N3-M2n4), since those module
+    combinations run their desorption chains sequentially and share the same
+    equipment. Adsorption instead comes from TAB3_ADSORPTION_MODULE alone. Falls
+    back to CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no rows for
+    the relevant module(s)."""
     try:
         stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
     except (FileNotFoundError, KeyError, ValueError):
@@ -146,8 +150,15 @@ def load_stage_duration_defaults_tab3():
 
     result = {}
     for phase in STAGE_PHASE_COLUMNS:
-        values = [avgs[phase] for avgs in per_module_phase_avg.values()]
-        result[phase] = round(sum(values) / len(values), 1) if phase == "Adsorption" else round(sum(values), 1)
+        if phase == "Adsorption":
+            adsorption_avgs = per_module_phase_avg.get(TAB3_ADSORPTION_MODULE)
+            result[phase] = (
+                round(adsorption_avgs["Adsorption"], 1) if adsorption_avgs
+                else CORE_PHASE_FALLBACK_DURATIONS["Adsorption"]
+            )
+        else:
+            values = [avgs[phase] for avgs in per_module_phase_avg.values()]
+            result[phase] = round(sum(values), 1)
     return result
 
 def get_versioned_default_table(state_key, expected_columns, version, build_fn):
@@ -1037,7 +1048,7 @@ with tab3:
         f"N1N2N3-M1n3 and N3-M2n4 cycle averages: {default_phase_durations_tab3}. "
         "Edit per pair if a pair's real durations differ."
     )
-    PHASE_DURATIONS_TAB3_VERSION = 2  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
+    PHASE_DURATIONS_TAB3_VERSION = 3  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
     get_versioned_default_table(
         "phase_durations_tab3", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_VERSION,
         lambda: pd.DataFrame({
