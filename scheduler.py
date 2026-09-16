@@ -72,12 +72,13 @@ def load_plant_cycle_defaults_tab3():
 STAGE_TIMESTAMPS_CSV = os.path.join(os.path.dirname(__file__), "carbonnest_stage_timestamps.csv")
 
 # The source log doesn't have a standalone "Heating" column or an app-equivalent
-# "Preheating" phase, so: Preheating is folded into Evacuation (it happens right
-# after Evacuation, before NCG Purging), and both "in-between" transition columns
-# are folded entirely into Heating (there's no other Heating figure to use).
+# "Preheating" phase. Evacuation uses only the "Evacuation (min)" column on its
+# own (Preheating time is dropped entirely, not folded into any phase). Both
+# "in-between" transition columns are folded entirely into Heating, since
+# there's no other Heating figure to use.
 STAGE_PHASE_COLUMNS = {
     "Adsorption": ["Adsorption (min)"],
-    "Evacuation": ["Evacuation (min)", "Preheating (min)"],
+    "Evacuation": ["Evacuation (min)"],
     "NCG Purging": ["NCGs Purging (min)"],
     "Heating": ["NCGs Purging/Heating (min)", "Heating/CO2 Purging (min)"],
     "CO2 Purging": ["CO2 Purging (min)"],
@@ -108,6 +109,25 @@ def load_stage_duration_defaults_by_pair(pairs):
             for phase, cols in STAGE_PHASE_COLUMNS.items()
         }
     return defaults
+
+def get_versioned_default_table(state_key, expected_columns, version, build_fn):
+    """Return st.session_state[state_key], rebuilding it via build_fn() if it's
+    missing, has the wrong columns, or was last built by an older `version` of the
+    default-sourcing logic (tracked in a companion "<state_key>__version" key).
+    This is what actually prevents a stale browser session from getting stuck on
+    outdated default values after the sourcing logic changes (e.g. a CSV mapping
+    fix) — bump `version` at the call site whenever that logic changes. A table a
+    user has genuinely edited is left alone as long as `version` hasn't moved."""
+    version_key = f"{state_key}__version"
+    needs_rebuild = (
+        state_key not in st.session_state
+        or list(st.session_state[state_key].columns) != expected_columns
+        or st.session_state.get(version_key) != version
+    )
+    if needs_rebuild:
+        st.session_state[state_key] = build_fn()
+        st.session_state[version_key] = version
+    return st.session_state[state_key]
 
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
@@ -1020,22 +1040,17 @@ with tab3:
         f"{default_yield_tab3} kg CO2/cycle. Edit per pair if a pair's real output differs."
     )
     pair_labels_tab3 = [f"Group {gid}" for gid in GROUP_IDS]
+    ENERGY_YIELD_TAB3_DEFAULTS_VERSION = 1  # bump whenever load_plant_cycle_defaults_tab3()'s sourcing changes
 
-    def _still_at_zero_tab3(df):
-        return (df["Energy per Cycle (kWh)"] == 0.0).all() and (df["Yield per Cycle (kg CO2)"] == 0.0).all()
-
-    if ("energy_yield_tab3" not in st.session_state
-            or "Pair" not in st.session_state.energy_yield_tab3.columns
-            or list(st.session_state.energy_yield_tab3["Pair"]) != pair_labels_tab3
-            # A session created before the CSV-seeded defaults existed (or before this
-            # exact default value was computed) is still sitting at the old 0.0
-            # placeholder — safe to refresh since the user never actually edited it.
-            or _still_at_zero_tab3(st.session_state.energy_yield_tab3)):
-        st.session_state.energy_yield_tab3 = pd.DataFrame({
+    energy_yield_tab3_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+    get_versioned_default_table(
+        "energy_yield_tab3", energy_yield_tab3_cols, ENERGY_YIELD_TAB3_DEFAULTS_VERSION,
+        lambda: pd.DataFrame({
             "Pair": pair_labels_tab3,
             "Energy per Cycle (kWh)": [default_energy_tab3] * len(pair_labels_tab3),
             "Yield per Cycle (kg CO2)": [default_yield_tab3] * len(pair_labels_tab3),
-        })
+        }),
+    )
     energy_yield_tab3 = st.data_editor(
         st.session_state.energy_yield_tab3,
         use_container_width=True,
@@ -2097,27 +2112,23 @@ with tab4:
         "Heating": 20, "CO2 Purging": 40, "Cooling": 30, "Repressurization": 5,
     }
     stage_defaults_by_pair = load_stage_duration_defaults_by_pair(PAIRS)
+    # Bump whenever STAGE_PHASE_COLUMNS' mapping (which source columns feed which
+    # phase) or FALLBACK_PHASE_DURATIONS changes, so stale sessions refresh.
+    ADV_PHASE_DURATIONS_DEFAULTS_VERSION = 2
 
     def _pair_phase_durations(pair):
         pair_defaults = stage_defaults_by_pair.get(pair, {})
         return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
 
-    def _still_at_fallback_durations(df):
-        fallback_row = [FALLBACK_PHASE_DURATIONS[phase] for phase in PHASES]
-        return all(list(df[f"{p} (min)"]) == fallback_row for p in PAIRS)
-
-    if ("adv_phase_durations" not in st.session_state
-            or list(st.session_state.adv_phase_durations.columns) != adv_phase_columns
-            # A session created before the stage-log defaults existed is still sitting
-            # at the old hand-picked defaults for every pair — safe to refresh since
-            # the user never actually edited any of them.
-            or _still_at_fallback_durations(st.session_state.adv_phase_durations)):
-        st.session_state.adv_phase_durations = pd.DataFrame({
+    get_versioned_default_table(
+        "adv_phase_durations", adv_phase_columns, ADV_PHASE_DURATIONS_DEFAULTS_VERSION,
+        lambda: pd.DataFrame({
             "Phase": PHASES,
             "Group A (min)": _pair_phase_durations("Group A"),
             "Group B (min)": _pair_phase_durations("Group B"),
             "Group C (min)": _pair_phase_durations("Group C"),
-        })
+        }),
+    )
 
     st.caption(
         "Defaults for Adsorption, Evacuation, NCG Purging, Heating, CO2 Purging, and Cooling are "
@@ -2165,20 +2176,17 @@ with tab4:
         f"({pair_plant_defaults['Group B'][0]} kWh, {pair_plant_defaults['Group B'][1]} kg CO2). "
         "Edit per pair if a pair's real output differs."
     )
-    def _still_at_zero_tab4(df):
-        return (df["Energy per Cycle (kWh)"] == 0.0).all() and (df["Yield per Cycle (kg CO2)"] == 0.0).all()
-
-    if ("energy_yield_tab4" not in st.session_state
-            or "Pair" not in st.session_state.energy_yield_tab4.columns
-            or list(st.session_state.energy_yield_tab4["Pair"]) != PAIRS
-            # A session created before the CSV-seeded defaults existed is still sitting
-            # at the old 0.0 placeholder — safe to refresh since the user never edited it.
-            or _still_at_zero_tab4(st.session_state.energy_yield_tab4)):
-        st.session_state.energy_yield_tab4 = pd.DataFrame({
+    # Bump whenever PAIR_PLANT_MODULE or load_plant_cycle_defaults_by_pair()'s sourcing changes.
+    ENERGY_YIELD_TAB4_DEFAULTS_VERSION = 1
+    energy_yield_tab4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+    get_versioned_default_table(
+        "energy_yield_tab4", energy_yield_tab4_cols, ENERGY_YIELD_TAB4_DEFAULTS_VERSION,
+        lambda: pd.DataFrame({
             "Pair": PAIRS,
             "Energy per Cycle (kWh)": [pair_plant_defaults[p][0] for p in PAIRS],
             "Yield per Cycle (kg CO2)": [pair_plant_defaults[p][1] for p in PAIRS],
-        })
+        }),
+    )
     energy_yield_tab4 = st.data_editor(
         st.session_state.energy_yield_tab4,
         use_container_width=True,
