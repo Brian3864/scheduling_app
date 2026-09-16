@@ -10,15 +10,23 @@ import numpy as np
 # Energy/Yield-per-cycle values in the Advanced Interleaved tab, instead of 0.0.
 PLANT_CYCLES_CSV = os.path.join(os.path.dirname(__file__), "carbonnest_plant_cycles.csv")
 
-# The 6-4-6 pairing isn't uniform: Groups A and C are built from the same
-# 3-Nelion (N1N2N3) module combination, while Group B is built from a
-# 2-Nelion (N1N2) combination. So each group gets its per-cycle defaults from
-# the matching "Module" rows in the plant cycle log, rather than one blended
-# plant-wide average.
+# Phase-duration sourcing (used by load_stage_duration_defaults_by_pair): Groups A
+# and C are built from the same 3-Nelion (N1N2N3) module combination, while Group B
+# is built from a 2-Nelion (N1N2) combination.
 PAIR_PLANT_MODULE = {
     "Group A": "N1N2N3-M1n3",
     "Group B": "N1N2-M1n3",
     "Group C": "N1N2N3-M1n3",
+}
+
+# Energy/Yield sourcing (used by load_plant_cycle_defaults_by_pair) is a separate,
+# deliberately different formula per pair: a weighted sum of one or more Module
+# averages. Group A uses N1N2N3-M1n3 alone; Group B uses N3-M2n4 doubled (it
+# represents two of that combination); Group C sums N1N2-M1n3 + N3-M2n4.
+PAIR_ENERGY_YIELD_FORMULA = {
+    "Group A": [("N1N2N3-M1n3", 1)],
+    "Group B": [("N3-M2n4", 2)],
+    "Group C": [("N1N2-M1n3", 1), ("N3-M2n4", 1)],
 }
 
 def _plant_cycles_df():
@@ -42,11 +50,20 @@ def _module_average(plant_cycles_df, module):
     )
 
 def load_plant_cycle_defaults_by_pair(pairs):
-    """Return {pair: (avg eTotal kWh, avg DES CO2 kg)} using each pair's matching
-    Module rows (see PAIR_PLANT_MODULE), or (0.0, 0.0) per pair if the file is
-    missing, malformed, or has no rows for that Module."""
+    """Return {pair: (avg eTotal kWh, avg DES CO2 kg)}, each a weighted sum of one
+    or more Module averages per PAIR_ENERGY_YIELD_FORMULA. A pair with no formula
+    entry gets (0.0, 0.0)."""
     plant_cycles_df = _plant_cycles_df()
-    return {pair: _module_average(plant_cycles_df, PAIR_PLANT_MODULE.get(pair)) for pair in pairs}
+    defaults = {}
+    for pair in pairs:
+        energy_total = 0.0
+        yield_total = 0.0
+        for module, weight in PAIR_ENERGY_YIELD_FORMULA.get(pair, []):
+            energy, co2 = _module_average(plant_cycles_df, module)
+            energy_total += weight * energy
+            yield_total += weight * co2
+        defaults[pair] = (round(energy_total, 2), round(yield_total, 2))
+    return defaults
 
 # Full Schedule Analysis's two pairs (Group A, Group B; 8 modules each) don't map to
 # a single Module value in the plant log the way tab4's pairs do, so both pairs
@@ -2228,15 +2245,17 @@ with tab4:
     pair_plant_defaults = load_plant_cycle_defaults_by_pair(PAIRS)
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
     st.caption(
-        "Defaults are seeded from carbonnest_plant_cycles.csv, matched per pair since the "
-        "6-4-6 split isn't uniform: Group A and Group C use the N1N2N3-M1n3 cycle average "
+        "Defaults are seeded from carbonnest_plant_cycles.csv, with a different formula per pair "
+        "(see PAIR_ENERGY_YIELD_FORMULA): Group A from the N1N2N3-M1n3 cycle average "
         f"({pair_plant_defaults['Group A'][0]} kWh, {pair_plant_defaults['Group A'][1]} kg CO2), "
-        "Group B uses the N1N2-M1n3 cycle average "
-        f"({pair_plant_defaults['Group B'][0]} kWh, {pair_plant_defaults['Group B'][1]} kg CO2). "
+        "Group B from the N3-M2n4 cycle average doubled "
+        f"({pair_plant_defaults['Group B'][0]} kWh, {pair_plant_defaults['Group B'][1]} kg CO2), "
+        "Group C from N1N2-M1n3 + N3-M2n4 summed "
+        f"({pair_plant_defaults['Group C'][0]} kWh, {pair_plant_defaults['Group C'][1]} kg CO2). "
         "Edit per pair if a pair's real output differs."
     )
-    # Bump whenever PAIR_PLANT_MODULE or load_plant_cycle_defaults_by_pair()'s sourcing changes.
-    ENERGY_YIELD_TAB4_DEFAULTS_VERSION = 1
+    # Bump whenever PAIR_ENERGY_YIELD_FORMULA or load_plant_cycle_defaults_by_pair()'s sourcing changes.
+    ENERGY_YIELD_TAB4_DEFAULTS_VERSION = 2
     energy_yield_tab4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4", energy_yield_tab4_cols, ENERGY_YIELD_TAB4_DEFAULTS_VERSION,
