@@ -4,7 +4,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import joblib
 
 # Real plant cycle log (Cycle #, Module, Start Time, DES CO2 (kg), DES Hours,
 # BAG CO2 (kg), DES Vol Cap, eTotal kWh) used to seed realistic default
