@@ -238,7 +238,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across Concurrent, Interleaved, and Advanced Interleaved. It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entry here.
+Compares Total Cycles, Total Yield, and Total Energy across four processes: Concurrent, Interleaved, Advanced Interleaved (6-6-4), and Advanced Interleaved (8-4-4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -2687,7 +2687,7 @@ with tab4:
         # Publish totals for the Yield vs Cycles comparison tab. Only refreshes when
         # this "Generate" button is (re)clicked — see that tab's caption for why.
         st.session_state.setdefault("process_comparison", {})
-        st.session_state["process_comparison"]["Advanced Interleaved"] = {
+        st.session_state["process_comparison"]["Advanced Interleaved (6-6-4)"] = {
             "Total Cycles": int(yield_energy_df["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df["Total Energy (kWh)"].sum()),
@@ -2710,6 +2710,13 @@ with tab4:
             st.metric("Plant Total Yield", f"{yield_energy_df_844['Total Yield (kg CO2)'].sum():.1f} kg CO2")
         with ye_metric_col2_844:
             st.metric("Plant Total Energy", f"{yield_energy_df_844['Total Energy (kWh)'].sum():.1f} kWh")
+
+        # Publish 8-4-4 totals too, alongside the 6-6-4 entry above.
+        st.session_state["process_comparison"]["Advanced Interleaved (8-4-4)"] = {
+            "Total Cycles": int(yield_energy_df_844["Complete Cycles"].sum()),
+            "Total Yield (kg CO2)": float(yield_energy_df_844["Total Yield (kg CO2)"].sum()),
+            "Total Energy (kWh)": float(yield_energy_df_844["Total Energy (kWh)"].sum()),
+        }
 
         gantt_colors = {
             'Adsorption': '#4B9CD3',
@@ -2765,14 +2772,17 @@ with tab5:
     st.caption(
         "Shows each process's Total Cycles, Total Yield, and Total Energy from the last time its "
         "own \"Generate\" button was clicked (Concurrent/Interleaved from Full Schedule Analysis, "
-        "Advanced Interleaved from its own tab). Re-click Generate in a tab to refresh its numbers here."
+        "both Advanced Interleaved configurations from the Advanced Interleaved tab's single "
+        "\"Generate Advanced Interleaved Schedules\" button). Re-click Generate in a tab to refresh "
+        "its numbers here."
     )
 
-    PROCESS_ORDER = ["Concurrent", "Interleaved", "Advanced Interleaved"]
+    PROCESS_ORDER = ["Concurrent", "Interleaved", "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)"]
     PROCESS_COLORS = {
         "Concurrent": "#6C5CE7",
         "Interleaved": "#E07C5E",
-        "Advanced Interleaved": "#2ECC71",
+        "Advanced Interleaved (6-6-4)": "#2ECC71",
+        "Advanced Interleaved (8-4-4)": "#F39C12",
     }
     comparison = st.session_state.get("process_comparison", {})
     available_processes = [p for p in PROCESS_ORDER if p in comparison]
