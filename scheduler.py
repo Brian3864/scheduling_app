@@ -53,32 +53,32 @@ PAIR_YIELD_FORMULA_8_4_4 = {
     "Group C": [("N3-M2n4", 2)],
 }
 
-# "Best-Yield (Reshuffled)" configuration: covers the full 16 modules across 3
-# pairs (6+4+6), each pair's PHASE DURATIONS taken from one real recorded Module
-# combination's own average (never mixed across combinations, same as
-# PAIR_PLANT_MODULE elsewhere). Group A and Group C are both 6-module pairs
-# sourced from N1N2N3-M1n3 (the highest real Yield per Cycle, 11.43 kg CO2) since
-# there's no second distinct real 6-module combination in the data; Group B is
-# the 4-module pair, sourced from N1N2-M1n3 (5.58 kg CO2). Yield per Cycle (see
-# PAIR_YIELD_FORMULA_RESHUFFLED below) sums multiple real combinations per pair
-# to push Total Yield higher, the same summing pattern already used for the
-# 6-6-4 and 8-4-4 configurations' Yield formulas.
+# "Best-Yield (Reshuffled)" configuration: 3 pairs built from NON-OVERLAPPING
+# real Module combinations, so their Yields can be safely added together without
+# double-counting any physical module. Checked against the Nelion x M1-M4 grid:
+#   N1N2N3-M1n3 = {N1,N2,N3}'s M1 & M3            -> 6 modules
+#   N3-M2n4     = N3's M2 & M4                     -> 2 modules
+#   N2-M2n4     = N2's M2 & M4                     -> 2 modules
+# These three don't share a single physical module (M1n3 and M2n4 are disjoint
+# positions), unlike N1N2-M1n3, which is a SUBSET of N1N2N3-M1n3 ({N1,N2}'s M1 &
+# M3) and was wrongly summed alongside it in an earlier version of this
+# configuration. Together these cover 10 of the 16 modules; the remaining 6
+# (N1's M2 & M4, and all of N4) have no recorded cycles in either CSV at all, so
+# there's no real data to represent them with — this reshuffle can't claim full
+# 16-module coverage, only what's actually been observed.
 PAIRS_RESHUFFLED = ["Group A", "Group B", "Group C"]
 PAIR_MODULE_RESHUFFLED = {
     "Group A": "N1N2N3-M1n3",
-    "Group B": "N1N2-M1n3",
-    "Group C": "N1N2N3-M1n3",
+    "Group B": "N3-M2n4",
+    "Group C": "N2-M2n4",
 }
 
-# Yield per Cycle sums every well-sampled real combination for each pair (same
-# summing pattern already used for 6-6-4/8-4-4's Yield formulas), to push Total
-# Yield above the >230 kg CO2/day target while every individual number summed is
-# still a real observed average — nothing invented, only reused/combined more
-# aggressively than a single-source lookup.
+# Each pair's Yield per Cycle is now its own single real average (no summing) —
+# since the pairs are non-overlapping, adding their totals together later is
+# already a valid combination; summing multiple combinations INTO one pair's
+# rate (as the previous version did) is what caused the double-counting.
 PAIR_YIELD_FORMULA_RESHUFFLED = {
-    "Group A": [("N1N2N3-M1n3", 1), ("N1N2-M1n3", 1), ("N3-M2n4", 1), ("N2-M2n4", 1)],
-    "Group B": [("N1N2N3-M1n3", 1), ("N1N2-M1n3", 1), ("N3-M2n4", 1), ("N2-M2n4", 1)],
-    "Group C": [("N1N2N3-M1n3", 1), ("N1N2-M1n3", 1), ("N3-M2n4", 1), ("N2-M2n4", 1)],
+    pair: [(module, 1)] for pair, module in PAIR_MODULE_RESHUFFLED.items()
 }
 
 def _plant_cycles_df():
@@ -2451,17 +2451,18 @@ with tab4:
     # === "Best-Yield (Reshuffled)" configuration ===
     st.markdown("### Best-Yield Configuration (Reshuffled)")
     st.caption(
-        "Covers all 16 modules across 3 pairs (6+4+6). Each pair's phase durations come from one "
-        "real recorded Module combination's own average (Group A & Group C from N1N2N3-M1n3, "
-        "Group B from N1N2-M1n3 — the only two real 6- and 4-module combinations in the data). "
-        "Yield per Cycle sums every well-sampled real combination for each pair (same summing "
-        "pattern as 6-6-4/8-4-4's Yield formulas) to push Total Yield well past 230 kg CO2/day. "
-        "See PAIR_MODULE_RESHUFFLED / PAIR_YIELD_FORMULA_RESHUFFLED near the top of the file."
+        "3 pairs built from NON-OVERLAPPING real Module combinations, so it's valid to add their "
+        "outputs together: Group A = N1N2N3-M1n3 (6 modules: N1/N2/N3's M1 & M3), Group B = "
+        "N3-M2n4 (2 modules: N3's M2 & M4), Group C = N2-M2n4 (2 modules: N2's M2 & M4). Each "
+        "pair's phase durations AND Yield/Energy per Cycle all come from that one combination's "
+        "own real average — no summing within a pair. This covers 10 of the 16 modules; N1's M2 "
+        "& M4 and all of N4 have no recorded cycles in either CSV, so they aren't represented. "
+        "See PAIR_MODULE_RESHUFFLED near the top of the file."
     )
 
     adv_phase_columns_reshuffled = ["Phase"] + [f"{p} (min)" for p in PAIRS_RESHUFFLED]
     stage_defaults_reshuffled = load_stage_duration_defaults_by_pair(PAIRS_RESHUFFLED, PAIR_MODULE_RESHUFFLED)
-    ADV_PHASE_DURATIONS_RESHUFFLED_VERSION = 2
+    ADV_PHASE_DURATIONS_RESHUFFLED_VERSION = 3
 
     def _pair_phase_durations_reshuffled(pair):
         pair_defaults = stage_defaults_reshuffled.get(pair, {})
@@ -2506,7 +2507,7 @@ with tab4:
     pair_plant_defaults_reshuffled = load_plant_cycle_defaults_weighted(
         PAIRS_RESHUFFLED, PAIR_MODULE_RESHUFFLED, PAIR_YIELD_FORMULA_RESHUFFLED,
     )
-    ENERGY_YIELD_RESHUFFLED_VERSION = 2
+    ENERGY_YIELD_RESHUFFLED_VERSION = 3
     energy_yield_reshuffled_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_reshuffled", energy_yield_reshuffled_cols, ENERGY_YIELD_RESHUFFLED_VERSION,
