@@ -32,14 +32,17 @@ PAIR_YIELD_FORMULA = {
 }
 
 # Alternative 8-4-4 pairing (vs. the 6-6-4 Group A/B/C above), for side-by-side
-# comparison in Advanced Interleaved. Phase durations AND Energy/Yield both use
-# one Module average per pair (no weighted formula, unlike PAIR_YIELD_FORMULA):
-# the 8-module pair from N1N2N3-M1n3, both 4-module pairs from N1N2-M1n3.
-PAIRS_8_4_4 = ["Pair (8)", "Pair (4a)", "Pair (4b)"]
+# comparison in Advanced Interleaved. Reuses the "Group A/B/C" pair names (this
+# config's own dedicated tables, distinguished by section header, not by name) -
+# Group A is the 8-module pair, Groups B and C are the two 4-module pairs. Phase
+# durations AND Energy/Yield both use one Module average per pair (no weighted
+# formula, unlike PAIR_YIELD_FORMULA): Group A from N1N2N3-M1n3, Groups B and C
+# from N1N2-M1n3.
+PAIRS_8_4_4 = ["Group A", "Group B", "Group C"]
 PAIR_PLANT_MODULE_8_4_4 = {
-    "Pair (8)": "N1N2N3-M1n3",
-    "Pair (4a)": "N1N2-M1n3",
-    "Pair (4b)": "N1N2-M1n3",
+    "Group A": "N1N2N3-M1n3",
+    "Group B": "N1N2-M1n3",
+    "Group C": "N1N2-M1n3",
 }
 
 def _plant_cycles_df():
@@ -933,7 +936,7 @@ with tab1:
 
 # === RESOURCE TRACKING ===
     resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
-    module_timers = {mod: 0 for mod in MODULES}
+    module_timers = {mod: 0 for mod in MODULES} 
     schedule = []
 
 # === SCHEDULING FUNCTIONS ===
@@ -2321,7 +2324,7 @@ with tab4:
 
     adv_phase_columns_844 = ["Phase"] + [f"{p} (min)" for p in PAIRS_8_4_4]
     stage_defaults_by_pair_844 = load_stage_duration_defaults_by_pair(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
-    ADV_PHASE_DURATIONS_844_VERSION = 1
+    ADV_PHASE_DURATIONS_844_VERSION = 2
 
     def _pair_phase_durations_844(pair):
         pair_defaults = stage_defaults_by_pair_844.get(pair, {})
@@ -2331,14 +2334,14 @@ with tab4:
         "adv_phase_durations_844", adv_phase_columns_844, ADV_PHASE_DURATIONS_844_VERSION,
         lambda: pd.DataFrame({
             "Phase": PHASES,
-            "Pair (8) (min)": _pair_phase_durations_844("Pair (8)"),
-            "Pair (4a) (min)": _pair_phase_durations_844("Pair (4a)"),
-            "Pair (4b) (min)": _pair_phase_durations_844("Pair (4b)"),
+            "Group A (min)": _pair_phase_durations_844("Group A"),
+            "Group B (min)": _pair_phase_durations_844("Group B"),
+            "Group C (min)": _pair_phase_durations_844("Group C"),
         }),
     )
     st.caption(
-        "Phase durations seeded from carbonnest_stage_timestamps.csv: Pair (8) from the N1N2N3-M1n3 "
-        "cycle average, both 4-module pairs from the N1N2-M1n3 cycle average."
+        "Phase durations seeded from carbonnest_stage_timestamps.csv: Group A (8-module pair) from "
+        "the N1N2N3-M1n3 cycle average, Groups B and C (4-module pairs) from the N1N2-M1n3 cycle average."
     )
     adv_phase_table_844 = st.data_editor(
         st.session_state.adv_phase_durations_844,
@@ -2346,9 +2349,9 @@ with tab4:
         hide_index=True,
         column_config={
             "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Pair (8) (min)": st.column_config.NumberColumn("Pair (8) (min)", min_value=0, max_value=240, required=True),
-            "Pair (4a) (min)": st.column_config.NumberColumn("Pair (4a) (min)", min_value=0, max_value=240, required=True),
-            "Pair (4b) (min)": st.column_config.NumberColumn("Pair (4b) (min)", min_value=0, max_value=240, required=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
         },
         key="adv_phase_editor_844",
     )
@@ -2368,7 +2371,10 @@ with tab4:
     }
 
     pair_plant_defaults_844 = load_plant_cycle_defaults_simple(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
-    ENERGY_YIELD_844_VERSION = 1
+    # Bumped because the row VALUES (pair names) changed from "Pair (8)/(4a)/(4b)"
+    # to "Group A/B/C" — the column names alone (["Pair", ...]) didn't change, so
+    # get_versioned_default_table's structural check wouldn't have caught this.
+    ENERGY_YIELD_844_VERSION = 2
     energy_yield_844_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_844", energy_yield_844_cols, ENERGY_YIELD_844_VERSION,
@@ -2380,7 +2386,7 @@ with tab4:
     )
     st.caption(
         "Energy & Yield per cycle, same sourcing as phase durations (no summing/weighting): "
-        "Pair (8) from N1N2N3-M1n3, both 4-module pairs from N1N2-M1n3."
+        "Group A (8-module pair) from N1N2N3-M1n3, Groups B and C (4-module pairs) from N1N2-M1n3."
     )
     energy_yield_table_844 = st.data_editor(
         st.session_state.energy_yield_tab4_844,
