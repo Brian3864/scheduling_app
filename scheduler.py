@@ -31,6 +31,17 @@ PAIR_YIELD_FORMULA = {
     "Group C": [("N1N2-M1n3", 1), ("N3-M2n4", 1)],
 }
 
+# Alternative 8-4-4 pairing (vs. the 6-6-4 Group A/B/C above), for side-by-side
+# comparison in Advanced Interleaved. Phase durations AND Energy/Yield both use
+# one Module average per pair (no weighted formula, unlike PAIR_YIELD_FORMULA):
+# the 8-module pair from N1N2N3-M1n3, both 4-module pairs from N1N2-M1n3.
+PAIRS_8_4_4 = ["Pair (8)", "Pair (4a)", "Pair (4b)"]
+PAIR_PLANT_MODULE_8_4_4 = {
+    "Pair (8)": "N1N2N3-M1n3",
+    "Pair (4a)": "N1N2-M1n3",
+    "Pair (4b)": "N1N2-M1n3",
+}
+
 def _plant_cycles_df():
     """Load the plant cycle log, or None if it's missing/malformed."""
     try:
@@ -67,6 +78,13 @@ def load_plant_cycle_defaults_by_pair(pairs):
             yield_total += weight * co2
         defaults[pair] = (round(energy, 2), round(yield_total, 2))
     return defaults
+
+def load_plant_cycle_defaults_simple(pairs, pair_module_map):
+    """Return {pair: (avg eTotal kWh, avg DES CO2 kg)} using one Module average per
+    pair for BOTH Energy and Yield equally — no weighted formula, unlike
+    load_plant_cycle_defaults_by_pair. Used for the 8-4-4 comparison config."""
+    plant_cycles_df = _plant_cycles_df()
+    return {pair: _module_average(plant_cycles_df, pair_module_map.get(pair)) for pair in pairs}
 
 # Full Schedule Analysis's two pairs (Group A, Group B; 8 modules each) don't map to
 # a single Module value in the plant log the way tab4's pairs do, so both pairs
@@ -115,11 +133,13 @@ CORE_PHASE_FALLBACK_DURATIONS = {
 
 # The log has no Repressurization column at all, so that phase always keeps
 # whatever value is already in the table (originally defaulted to 5 minutes).
-def load_stage_duration_defaults_by_pair(pairs):
+def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     """Return {pair: {phase: avg minutes}} for the 6 phases in STAGE_PHASE_COLUMNS,
-    sourced from each pair's matching Module rows (see PAIR_PLANT_MODULE) in
-    carbonnest_stage_timestamps.csv. A pair with a missing file/module/phase simply
-    has no entry for it — callers should fall back to their own default."""
+    sourced from each pair's matching Module rows (pair_module_map, default
+    PAIR_PLANT_MODULE) in carbonnest_stage_timestamps.csv. A pair with a missing
+    file/module/phase simply has no entry for it — callers should fall back to
+    their own default."""
+    pair_module_map = pair_module_map if pair_module_map is not None else PAIR_PLANT_MODULE
     try:
         stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
     except (FileNotFoundError, KeyError, ValueError):
@@ -127,7 +147,7 @@ def load_stage_duration_defaults_by_pair(pairs):
 
     defaults = {}
     for pair in pairs:
-        module = PAIR_PLANT_MODULE.get(pair)
+        module = pair_module_map.get(pair)
         subset = stage_df[stage_df["Module"] == module] if module else stage_df.iloc[0:0]
         if len(subset) == 0:
             defaults[pair] = {}
@@ -2291,18 +2311,113 @@ with tab4:
         for pair in PAIRS
     }
 
-    def run_advanced_interleaved():
+    # === 8-4-4 comparison configuration ===
+    # Same scheduling engine, phase list, operating period, and Evacuation-overrides-
+    # Cooling setting as the 6-6-4 config above — only the pairing/module sourcing
+    # differs. See PAIRS_8_4_4 / PAIR_PLANT_MODULE_8_4_4 near the top of the file.
+    st.markdown("### 8-4-4 Configuration (Comparison)")
+    st.caption("Same scheduling rules as above, applied to an 8-4-4 pairing instead of 6-6-4, for side-by-side comparison.")
+
+    adv_phase_columns_844 = ["Phase"] + [f"{p} (min)" for p in PAIRS_8_4_4]
+    stage_defaults_by_pair_844 = load_stage_duration_defaults_by_pair(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
+    ADV_PHASE_DURATIONS_844_VERSION = 1
+
+    def _pair_phase_durations_844(pair):
+        pair_defaults = stage_defaults_by_pair_844.get(pair, {})
+        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+
+    get_versioned_default_table(
+        "adv_phase_durations_844", adv_phase_columns_844, ADV_PHASE_DURATIONS_844_VERSION,
+        lambda: pd.DataFrame({
+            "Phase": PHASES,
+            "Pair (8) (min)": _pair_phase_durations_844("Pair (8)"),
+            "Pair (4a) (min)": _pair_phase_durations_844("Pair (4a)"),
+            "Pair (4b) (min)": _pair_phase_durations_844("Pair (4b)"),
+        }),
+    )
+    st.caption(
+        "Phase durations seeded from carbonnest_stage_timestamps.csv: Pair (8) from the N1N2N3-M1n3 "
+        "cycle average, both 4-module pairs from the N1N2-M1n3 cycle average."
+    )
+    adv_phase_table_844 = st.data_editor(
+        st.session_state.adv_phase_durations_844,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Pair (8) (min)": st.column_config.NumberColumn("Pair (8) (min)", min_value=0, max_value=240, required=True),
+            "Pair (4a) (min)": st.column_config.NumberColumn("Pair (4a) (min)", min_value=0, max_value=240, required=True),
+            "Pair (4b) (min)": st.column_config.NumberColumn("Pair (4b) (min)", min_value=0, max_value=240, required=True),
+        },
+        key="adv_phase_editor_844",
+    )
+    st.session_state.adv_phase_durations_844 = adv_phase_table_844
+
+    PHASE_DURATIONS_BY_PAIR_844 = {
+        pair: {
+            phase: int(
+                adv_phase_table_844.loc[
+                    adv_phase_table_844["Phase"] == phase,
+                    f"{pair} (min)"
+                ].iloc[0]
+            )
+            for phase in PHASES
+        }
+        for pair in PAIRS_8_4_4
+    }
+
+    pair_plant_defaults_844 = load_plant_cycle_defaults_simple(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
+    ENERGY_YIELD_844_VERSION = 1
+    energy_yield_844_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+    get_versioned_default_table(
+        "energy_yield_tab4_844", energy_yield_844_cols, ENERGY_YIELD_844_VERSION,
+        lambda: pd.DataFrame({
+            "Pair": PAIRS_8_4_4,
+            "Energy per Cycle (kWh)": [pair_plant_defaults_844[p][0] for p in PAIRS_8_4_4],
+            "Yield per Cycle (kg CO2)": [pair_plant_defaults_844[p][1] for p in PAIRS_8_4_4],
+        }),
+    )
+    st.caption(
+        "Energy & Yield per cycle, same sourcing as phase durations (no summing/weighting): "
+        "Pair (8) from N1N2N3-M1n3, both 4-module pairs from N1N2-M1n3."
+    )
+    energy_yield_table_844 = st.data_editor(
+        st.session_state.energy_yield_tab4_844,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pair": st.column_config.TextColumn("Pair", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_844",
+    )
+    st.session_state.energy_yield_tab4_844 = energy_yield_table_844
+
+    PAIR_ENERGY_PER_CYCLE_844 = {
+        pair: float(energy_yield_table_844.loc[energy_yield_table_844["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+        for pair in PAIRS_8_4_4
+    }
+    PAIR_YIELD_PER_CYCLE_844 = {
+        pair: float(energy_yield_table_844.loc[energy_yield_table_844["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+        for pair in PAIRS_8_4_4
+    }
+
+    def run_advanced_interleaved(pairs, phase_durations_by_pair, total_minutes, enforce_evac_cool):
         """
         Advanced 3-pair interleaved scheduler. Builds a schedule by repeatedly giving
         each pair its next phase group as soon as that phase group's shared resource
-        is free, until nothing more can be scheduled before TOTAL_MINUTES_ADV runs out.
+        is free, until nothing more can be scheduled before total_minutes runs out.
+        Works for any 3 pair names — pairs[0] is the "privileged" pair whose
+        Adsorption can overlap with the other two; pairs[1] and pairs[2] cannot
+        overlap each other's Adsorption.
 
         Sequence per pair:
         Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging -> Cooling -> Repressurization
 
         Rules actually enforced below:
-        - Group A can overlap adsorption with Group B and Group C.
-        - Group B and Group C adsorption cannot overlap each other.
+        - pairs[0] can overlap adsorption with pairs[1] and pairs[2].
+        - pairs[1] and pairs[2] cannot overlap each other's adsorption.
         - Only one pair can be in the Desorption chain (Evacuation..CO2 Purging) at a time
           — tracked via resource_ready_time["Desorption"].
         - Only one pair can be in Cooling at a time — tracked via
@@ -2317,7 +2432,7 @@ with tab4:
         """
 
         schedule = []
-        PAIRS = ["Group A", "Group B", "Group C"]
+        pair_a, pair_b, pair_c = pairs
 
         DESORPTION_CHAIN = [
             "Evacuation",
@@ -2329,18 +2444,14 @@ with tab4:
         # Stagger the three pairs across different phase groups from the start, so
         # they aren't all trying to claim the same shared resource in the first pass.
         pair_next_phase = {
-            "Group A": "Adsorption",
-            "Group B": "Desorption",
-            "Group C": "Cooling",
+            pair_a: "Adsorption",
+            pair_b: "Desorption",
+            pair_c: "Cooling",
         }
 
         # Each pair's own local clock: the earliest minute IT is free to start its
         # next phase (independent of whether the shared resource for that phase is free).
-        pair_ready_time = {
-            "Group A": 0,
-            "Group B": 0,
-            "Group C": 0,
-        }
+        pair_ready_time = {pair: 0 for pair in pairs}
 
         # Shared, plant-wide resources: the earliest minute each one is free for the
         # NEXT pair to use, regardless of which pair is asking.
@@ -2350,46 +2461,24 @@ with tab4:
             "Repressurization": 0,
         }
 
-    # def find_repressurization_start(pair, earliest_start):
-        
-                
-        # repress_rows = [
-        #     row for row in schedule
-        #     if row["Phase"] == "Repressurization" and row["Pair"] != pair
-        # ]
-
-        # best_start = None
-
-        # for row in sorted(repress_rows, key=lambda r: r["Start"]):
-
-        #     possible_start = max(earliest_start, row["Start"])
-
-        #     # Evacuation only needs to BEGIN during repressurization
-        #     if possible_start < row["End"]:
-
-        #         if best_start is None or possible_start < best_start:
-        #             best_start = possible_start
-
-        # return best_start
-
         # Main loop: sweep the three pairs, advancing each by one phase group per pass,
         # until a full pass makes no progress (every pair is either done or blocked by
         # the operating-period limit).
         while True:
             progress = False
 
-            for pair in PAIRS:
+            for pair in pairs:
                 phase_group = pair_next_phase[pair]
 
                 if phase_group == "Adsorption":
-                    duration = PHASE_DURATIONS_BY_PAIR[pair]["Adsorption"]
+                    duration = phase_durations_by_pair[pair]["Adsorption"]
 
-                    # Group A can overlap with Group B and Group C.
-                    # Group B and Group C cannot overlap each other.
+                    # pair_a can overlap with pair_b and pair_c.
+                    # pair_b and pair_c cannot overlap each other.
                     start = pair_ready_time[pair]
 
-                    if pair in ("Group B", "Group C"):
-                        blocking_pair = "Group C" if pair == "Group B" else "Group B"
+                    if pair in (pair_b, pair_c):
+                        blocking_pair = pair_c if pair == pair_b else pair_b
                         for row in schedule:
                             if row["Phase"] == "Adsorption" and row["Pair"] == blocking_pair:
                                 if start < row["End"] and start + duration > row["Start"]:
@@ -2397,7 +2486,7 @@ with tab4:
 
                     end = start + duration
 
-                    if end > TOTAL_MINUTES_ADV:
+                    if end > total_minutes:
                         continue
 
                     schedule.append({
@@ -2422,17 +2511,17 @@ with tab4:
                     # resource is held for its full total_desorption_duration.
                     phase_start = start
                     total_desorption_duration = sum(
-                        PHASE_DURATIONS_BY_PAIR[pair][phase]
+                        phase_durations_by_pair[pair][phase]
                         for phase in DESORPTION_CHAIN
                     )
 
                     end = start + total_desorption_duration
 
-                    if end > TOTAL_MINUTES_ADV:
+                    if end > total_minutes:
                         continue
 
                     for phase in DESORPTION_CHAIN:
-                        duration = PHASE_DURATIONS_BY_PAIR[pair][phase]
+                        duration = phase_durations_by_pair[pair][phase]
 
                         if duration > 0:
                             schedule.append({
@@ -2451,7 +2540,7 @@ with tab4:
 
                 elif phase_group == "Cooling":
                     start = max(pair_ready_time[pair], resource_ready_time["Cooling"])
-                    duration = PHASE_DURATIONS_BY_PAIR[pair]["Cooling"]
+                    duration = phase_durations_by_pair[pair]["Cooling"]
 
                     # Evacuation gets priority over Cooling: if another pair's Evacuation
                     # overlaps the Cooling window, Cooling pauses and resumes with its
@@ -2460,7 +2549,7 @@ with tab4:
                         (row for row in schedule
                          if row["Phase"] == "Evacuation" and row["Pair"] != pair),
                         key=lambda r: r["Start"]
-                    ) if adv_enforce_evac_cool else []
+                    ) if enforce_evac_cool else []
 
                     cooling_segments = []
                     remaining = duration
@@ -2494,7 +2583,7 @@ with tab4:
 
                     end = cooling_segments[-1][1]
 
-                    if end > TOTAL_MINUTES_ADV:
+                    if end > total_minutes:
                         continue
 
                     for seg_start, seg_end in cooling_segments:
@@ -2513,10 +2602,10 @@ with tab4:
                 elif phase_group == "Repressurization":
                     # Final phase of the cycle; frees the pair back to Adsorption once done.
                     start = max(pair_ready_time[pair], resource_ready_time["Repressurization"])
-                    duration = PHASE_DURATIONS_BY_PAIR[pair]["Repressurization"]
+                    duration = phase_durations_by_pair[pair]["Repressurization"]
                     end = start + duration
 
-                    if end > TOTAL_MINUTES_ADV:
+                    if end > total_minutes:
                         continue
 
                     schedule.append({
@@ -2536,50 +2625,41 @@ with tab4:
 
         return pd.DataFrame(schedule)
 
-    if st.button("Generate Advanced Interleaved Schedule", key="adv_generate"):
-        adv_schedule = run_advanced_interleaved()
-
-        if adv_schedule is None:
-            st.error("run_advanced_interleaved() returned None")
-            st.stop()
-
-
-        st.markdown("### Complete Cycles")
-
-        cycle_rows = []
-        for pair in PAIRS:
-            pair_df = adv_schedule[adv_schedule["Pair"] == pair]
+    def _complete_cycles_and_yield_energy(schedule_df, pairs, yield_per_cycle, energy_per_cycle):
+        """Shared logic for both configurations: count each pair's complete cycles
+        from its scheduled rows, then multiply by its per-cycle rates."""
+        rows = []
+        for pair in pairs:
+            pair_df = schedule_df[schedule_df["Pair"] == pair]
             # Each full cycle contributes one scheduled row per phase in PHASES, so
             # total rows / phase count gives the completed-cycle count. Note: if a
             # Cooling phase got split into multiple segments (paused for another
             # pair's Evacuation), that cycle has one extra row, which can make this
             # a slight undercount versus the true cycle count.
-            complete_cycles = len(pair_df) // len(PHASES)
-            cycle_rows.append({
-                "Pair": pair,
-                "Complete Cycles": complete_cycles
-            })
-
-        st.dataframe(pd.DataFrame(cycle_rows), use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the combined per-cycle rate of every module in that pair.")
-
-        yield_energy_rows = []
-        for row in cycle_rows:
-            pair = row["Pair"]
-            cycles = row["Complete Cycles"]
-            total_yield = cycles * PAIR_YIELD_PER_CYCLE.get(pair, 0.0)
-            total_energy = cycles * PAIR_ENERGY_PER_CYCLE.get(pair, 0.0)
-            yield_energy_rows.append({
+            cycles = len(pair_df) // len(PHASES)
+            total_yield = cycles * yield_per_cycle.get(pair, 0.0)
+            total_energy = cycles * energy_per_cycle.get(pair, 0.0)
+            rows.append({
                 "Pair": pair,
                 "Complete Cycles": cycles,
                 "Total Yield (kg CO2)": round(total_yield, 1),
                 "Total Energy (kWh)": round(total_energy, 1),
                 "kg CO2 per kWh": round(total_yield / total_energy, 3) if total_energy > 0 else "—",
             })
+        return pd.DataFrame(rows)
 
-        yield_energy_df = pd.DataFrame(yield_energy_rows)
+    if st.button("Generate Advanced Interleaved Schedules (6-6-4 & 8-4-4)", key="adv_generate"):
+        adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
+        adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
+
+        st.markdown("## 6-6-4 Configuration")
+        st.markdown("### Complete Cycles")
+
+        yield_energy_df = _complete_cycles_and_yield_energy(adv_schedule, PAIRS, PAIR_YIELD_PER_CYCLE, PAIR_ENERGY_PER_CYCLE)
+        st.dataframe(yield_energy_df[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
+
+        st.markdown("### Yield & Energy Analysis")
+        st.caption("Total Yield/Energy = Complete Cycles × the combined per-cycle rate of every module in that pair.")
         st.dataframe(yield_energy_df, use_container_width=True, hide_index=True)
 
         ye_metric_col1, ye_metric_col2 = st.columns(2)
@@ -2597,7 +2677,25 @@ with tab4:
             "Total Energy (kWh)": float(yield_energy_df["Total Energy (kWh)"].sum()),
         }
 
-        st.markdown("### Advanced Interleaved Gantt Chart")
+        st.markdown("## 8-4-4 Configuration")
+        st.markdown("### Complete Cycles")
+
+        yield_energy_df_844 = _complete_cycles_and_yield_energy(
+            adv_schedule_844, PAIRS_8_4_4, PAIR_YIELD_PER_CYCLE_844, PAIR_ENERGY_PER_CYCLE_844
+        )
+        st.dataframe(yield_energy_df_844[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
+
+        st.markdown("### Yield & Energy Analysis")
+        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
+        st.dataframe(yield_energy_df_844, use_container_width=True, hide_index=True)
+
+        ye_metric_col1_844, ye_metric_col2_844 = st.columns(2)
+        with ye_metric_col1_844:
+            st.metric("Plant Total Yield", f"{yield_energy_df_844['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+        with ye_metric_col2_844:
+            st.metric("Plant Total Energy", f"{yield_energy_df_844['Total Energy (kWh)'].sum():.1f} kWh")
+
+        st.markdown("### Advanced Interleaved Gantt Chart (6-6-4 Configuration)")
 
         colors = {
             'Adsorption': '#4B9CD3',
