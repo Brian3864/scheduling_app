@@ -2200,7 +2200,8 @@ with tab4:
             help="When another pair's Evacuation overlaps a pair's Cooling, Cooling pauses and resumes once that Evacuation ends."
         )
 
-        st.caption("Phase durations per pair - edit directly in the table")
+    st.markdown("### 6-6-4 Configuration")
+    st.caption("Phase durations per pair - edit directly in the table")
 
     PAIRS = ["Group A", "Group B", "Group C"]
     adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
