@@ -2702,9 +2702,7 @@ with tab4:
         with ye_metric_col2_844:
             st.metric("Plant Total Energy", f"{yield_energy_df_844['Total Energy (kWh)'].sum():.1f} kWh")
 
-        st.markdown("### Advanced Interleaved Gantt Chart (6-6-4 Configuration)")
-
-        colors = {
+        gantt_colors = {
             'Adsorption': '#4B9CD3',
             'Evacuation': '#FFB347',
             'NCG Purging': '#FFD700',
@@ -2714,35 +2712,40 @@ with tab4:
             'Repressurization': '#B0B0B0'
         }
 
-        fig, ax = plt.subplots(figsize=(14, 5))
-
-        for _, row in adv_schedule.iterrows():
-            ax.barh(
-                row["Pair"],
-                row["End"] - row["Start"],
-                left=row["Start"],
-                color=colors.get(row["Phase"], "#888"),
-                edgecolor="black"
+        def _draw_advanced_gantt(schedule_df, total_minutes, title):
+            fig, ax = plt.subplots(figsize=(14, 5))
+            for _, row in schedule_df.iterrows():
+                ax.barh(
+                    row["Pair"],
+                    row["End"] - row["Start"],
+                    left=row["Start"],
+                    color=gantt_colors.get(row["Phase"], "#888"),
+                    edgecolor="black"
+                )
+            ax.set_xlabel("Time (minutes)")
+            ax.set_ylabel("Pairs")
+            ax.set_title(title)
+            ax.set_xlim(0, total_minutes)
+            ax.grid(True, axis="x", linestyle="--", alpha=0.4)
+            ax.legend(
+                [plt.Rectangle((0, 0), 1, 1, color=gantt_colors[p]) for p in PHASES],
+                PHASES,
+                loc="upper right",
+                fontsize=8
             )
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
 
-        ax.set_xlabel("Time (minutes)")
-        ax.set_ylabel("Pairs")
-        ax.set_title("Advanced Interleaved Schedule - 3 Pairs")
-        ax.set_xlim(0, TOTAL_MINUTES_ADV)
-        ax.grid(True, axis="x", linestyle="--", alpha=0.4)
-
-        ax.legend(
-            [plt.Rectangle((0, 0), 1, 1, color=colors[p]) for p in PHASES],
-            PHASES,
-            loc="upper right",
-            fontsize=8
-        )
-
-        plt.tight_layout()
-        st.pyplot(fig)
-
-        with st.expander("Schedule Data"):
+        st.markdown("### Advanced Interleaved Gantt Chart (6-6-4 Configuration)")
+        _draw_advanced_gantt(adv_schedule, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 6-6-4 Configuration")
+        with st.expander("Schedule Data (6-6-4 Configuration)"):
             st.dataframe(adv_schedule, use_container_width=True, hide_index=True)
+
+        st.markdown("### Advanced Interleaved Gantt Chart (8-4-4 Configuration)")
+        _draw_advanced_gantt(adv_schedule_844, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 8-4-4 Configuration")
+        with st.expander("Schedule Data (8-4-4 Configuration)"):
+            st.dataframe(adv_schedule_844, use_container_width=True, hide_index=True)
 
 with tab5:
     # Cross-process comparison. Reads whatever tab3 (Concurrent/Interleaved) and
