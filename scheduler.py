@@ -81,6 +81,40 @@ PAIR_YIELD_FORMULA_RESHUFFLED = {
     pair: [(module, 1)] for pair, module in PAIR_MODULE_RESHUFFLED.items()
 }
 
+# "4-Group" configuration: extends the reshuffle above with a 4th pair (Group D)
+# to cover Nelion 4 and Nelion 1's M2/M4, neither of which has ANY recorded
+# cycles in either CSV. Per instruction, these are extrapolated as behaving like
+# Nelion 3's M2/M4 (N3-M2n4) — the only real M2n4 data available at all besides
+# N2's. Group D represents 4 modules (N1's M2 & M4, plus N4's M2 & M4): its
+# phase durations are N3-M2n4's own real timing (both extrapolated units are
+# assumed to cycle the same way N3's does), and its Energy/Yield per Cycle is
+# N3-M2n4's rate DOUBLED — two independent N3-M2n4-like units combined into one
+# pair, the same "x2" pattern already used for the 6-6-4 configuration's Group B.
+# This covers 14 of the 16 modules; Nelion 4's M1 & M3 (2 modules) are still not
+# represented, since there's no real single-Nelion M1n3 duration profile to
+# extrapolate from (only the 3-Nelion-combined N1N2N3-M1n3, or the
+# statistically unreliable single-sample N1-M1n3).
+#
+# The scheduler's original "one privileged pair overlaps, the other two don't
+# overlap each other" Adsorption rule doesn't generalize to a 4th pair without
+# guessing at an unknown fan-sharing constraint, so per instruction this
+# configuration instead allows every pair's Adsorption to overlap freely with
+# every other pair's (see the free_adsorption_overlap argument on
+# run_advanced_interleaved).
+PAIRS_4GROUP = ["Group A", "Group B", "Group C", "Group D"]
+PAIR_MODULE_4GROUP = {
+    "Group A": "N1N2N3-M1n3",
+    "Group B": "N3-M2n4",
+    "Group C": "N2-M2n4",
+    "Group D": "N3-M2n4",  # extrapolated: stands in for N1's + N4's M2/M4
+}
+PAIR_YIELD_FORMULA_4GROUP = {
+    "Group A": [("N1N2N3-M1n3", 1)],
+    "Group B": [("N3-M2n4", 1)],
+    "Group C": [("N2-M2n4", 1)],
+    "Group D": [("N3-M2n4", 2)],
+}
+
 def _plant_cycles_df():
     """Load the plant cycle log, or None if it's missing/malformed."""
     try:
@@ -262,12 +296,12 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
 - Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
-- Three configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings), plus a Best-Yield (Reshuffled) configuration covering all 16 modules (6+4+6) whose phase durations come from real, well-sampled Module combinations (N1N2N3-M1n3, N1N2-M1n3) and whose Yield per Cycle sums multiple real combinations per pair to push Total Yield well past 230 kg CO2/day
+- Four configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings, 3 pairs each), Best-Yield (3 non-overlapping real Module combinations, covering 10 of 16 modules), and 4-Group (adds a 4th pair extrapolating Nelion 4 and Nelion 1's M2/M4 from Nelion 3's real data, covering 14 of 16 modules) — the 4-Group configuration also allows every pair's Adsorption to overlap freely, since the original 3-pair overlap rule doesn't generalize to a 4th pair without an unverified assumption
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across five processes: Concurrent, Interleaved, and all three Advanced Interleaved configurations (6-6-4, 8-4-4, and Best-Yield/Reshuffled). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across six processes: Concurrent, Interleaved, and all four Advanced Interleaved configurations (6-6-4, 8-4-4, Best-Yield, and 4-Group). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -2539,21 +2573,116 @@ with tab4:
         for pair in PAIRS_RESHUFFLED
     }
 
-    def run_advanced_interleaved(pairs, phase_durations_by_pair, total_minutes, enforce_evac_cool):
+    # === "4-Group" configuration ===
+    st.markdown("### 4-Group Configuration (Adsorption Overlap Allowed)")
+    st.caption(
+        "Adds a 4th pair, Group D, to the reshuffle above: Group A = N1N2N3-M1n3 (6 modules), "
+        "Group B = N3-M2n4 (2), Group C = N2-M2n4 (2), Group D = 4 modules (N1's M2 & M4, plus "
+        "N4's M2 & M4) extrapolated from N3-M2n4's real data doubled, since neither N1's M2/M4 nor "
+        "any of Nelion 4 has recorded cycles in either CSV. Covers 14 of 16 modules — Nelion 4's "
+        "M1 & M3 still aren't represented; there's no real single-Nelion M1n3 duration profile to "
+        "extrapolate from. Because there's no known fan-sharing constraint for a 4th pair, every "
+        "pair's Adsorption is allowed to overlap freely with every other pair's here."
+    )
+
+    adv_phase_columns_4group = ["Phase"] + [f"{p} (min)" for p in PAIRS_4GROUP]
+    stage_defaults_4group = load_stage_duration_defaults_by_pair(PAIRS_4GROUP, PAIR_MODULE_4GROUP)
+    ADV_PHASE_DURATIONS_4GROUP_VERSION = 1
+
+    def _pair_phase_durations_4group(pair):
+        pair_defaults = stage_defaults_4group.get(pair, {})
+        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+
+    get_versioned_default_table(
+        "adv_phase_durations_4group", adv_phase_columns_4group, ADV_PHASE_DURATIONS_4GROUP_VERSION,
+        lambda: pd.DataFrame({
+            "Phase": PHASES,
+            "Group A (min)": _pair_phase_durations_4group("Group A"),
+            "Group B (min)": _pair_phase_durations_4group("Group B"),
+            "Group C (min)": _pair_phase_durations_4group("Group C"),
+            "Group D (min)": _pair_phase_durations_4group("Group D"),
+        }),
+    )
+    adv_phase_table_4group = st.data_editor(
+        st.session_state.adv_phase_durations_4group,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+            "Group D (min)": st.column_config.NumberColumn("Group D (min)", min_value=0, max_value=240, required=True),
+        },
+        key="adv_phase_editor_4group",
+    )
+    st.session_state.adv_phase_durations_4group = adv_phase_table_4group
+
+    PHASE_DURATIONS_BY_PAIR_4GROUP = {
+        pair: {
+            phase: int(
+                adv_phase_table_4group.loc[
+                    adv_phase_table_4group["Phase"] == phase,
+                    f"{pair} (min)"
+                ].iloc[0]
+            )
+            for phase in PHASES
+        }
+        for pair in PAIRS_4GROUP
+    }
+
+    pair_plant_defaults_4group = load_plant_cycle_defaults_weighted(
+        PAIRS_4GROUP, PAIR_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
+    )
+    ENERGY_YIELD_4GROUP_VERSION = 1
+    energy_yield_4group_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+    get_versioned_default_table(
+        "energy_yield_tab4_4group", energy_yield_4group_cols, ENERGY_YIELD_4GROUP_VERSION,
+        lambda: pd.DataFrame({
+            "Pair": PAIRS_4GROUP,
+            "Energy per Cycle (kWh)": [pair_plant_defaults_4group[p][0] for p in PAIRS_4GROUP],
+            "Yield per Cycle (kg CO2)": [pair_plant_defaults_4group[p][1] for p in PAIRS_4GROUP],
+        }),
+    )
+    energy_yield_table_4group = st.data_editor(
+        st.session_state.energy_yield_tab4_4group,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pair": st.column_config.TextColumn("Pair", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_4group",
+    )
+    st.session_state.energy_yield_tab4_4group = energy_yield_table_4group
+
+    PAIR_ENERGY_PER_CYCLE_4GROUP = {
+        pair: float(energy_yield_table_4group.loc[energy_yield_table_4group["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+        for pair in PAIRS_4GROUP
+    }
+    PAIR_YIELD_PER_CYCLE_4GROUP = {
+        pair: float(energy_yield_table_4group.loc[energy_yield_table_4group["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+        for pair in PAIRS_4GROUP
+    }
+
+    def run_advanced_interleaved(pairs, phase_durations_by_pair, total_minutes, enforce_evac_cool, free_adsorption_overlap=False):
         """
-        Advanced 3-pair interleaved scheduler. Builds a schedule by repeatedly giving
-        each pair its next phase group as soon as that phase group's shared resource
-        is free, until nothing more can be scheduled before total_minutes runs out.
-        Works for any 3 pair names — pairs[0] is the "privileged" pair whose
-        Adsorption can overlap with the other two; pairs[1] and pairs[2] cannot
-        overlap each other's Adsorption.
+        Advanced interleaved scheduler. Builds a schedule by repeatedly giving each
+        pair its next phase group as soon as that phase group's shared resource is
+        free, until nothing more can be scheduled before total_minutes runs out.
 
         Sequence per pair:
         Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging -> Cooling -> Repressurization
 
         Rules actually enforced below:
-        - pairs[0] can overlap adsorption with pairs[1] and pairs[2].
-        - pairs[1] and pairs[2] cannot overlap each other's adsorption.
+        - Adsorption overlap: if free_adsorption_overlap is False (the original
+          3-pair rule, requires exactly 3 pairs), pairs[0] can overlap Adsorption
+          with pairs[1]/pairs[2], but pairs[1] and pairs[2] cannot overlap each
+          other's Adsorption. If True (used for configurations with more than 3
+          pairs, where that specific 3-pair fan-sharing constraint doesn't apply
+          or isn't known), every pair's Adsorption can overlap freely with every
+          other pair's.
         - Only one pair can be in the Desorption chain (Evacuation..CO2 Purging) at a time
           — tracked via resource_ready_time["Desorption"].
         - Only one pair can be in Cooling at a time — tracked via
@@ -2568,7 +2697,8 @@ with tab4:
         """
 
         schedule = []
-        pair_a, pair_b, pair_c = pairs
+        if not free_adsorption_overlap:
+            pair_a, pair_b, pair_c = pairs
 
         DESORPTION_CHAIN = [
             "Evacuation",
@@ -2577,13 +2707,12 @@ with tab4:
             "CO2 Purging"
         ]
 
-        # Stagger the three pairs across different phase groups from the start, so
-        # they aren't all trying to claim the same shared resource in the first pass.
-        pair_next_phase = {
-            pair_a: "Adsorption",
-            pair_b: "Desorption",
-            pair_c: "Cooling",
-        }
+        # Stagger pairs across different phase groups from the start, so they
+        # aren't all trying to claim the same shared resource in the first pass.
+        # Cycles through the 3 shared plant resources plus Adsorption, so any
+        # number of pairs gets spread across all 4 starting points.
+        STAGGER_PHASES = ["Adsorption", "Desorption", "Cooling", "Repressurization"]
+        pair_next_phase = {pair: STAGGER_PHASES[i % len(STAGGER_PHASES)] for i, pair in enumerate(pairs)}
 
         # Each pair's own local clock: the earliest minute IT is free to start its
         # next phase (independent of whether the shared resource for that phase is free).
@@ -2597,7 +2726,7 @@ with tab4:
             "Repressurization": 0,
         }
 
-        # Main loop: sweep the three pairs, advancing each by one phase group per pass,
+        # Main loop: sweep the pairs, advancing each by one phase group per pass,
         # until a full pass makes no progress (every pair is either done or blocked by
         # the operating-period limit).
         while True:
@@ -2611,9 +2740,10 @@ with tab4:
 
                     # pair_a can overlap with pair_b and pair_c.
                     # pair_b and pair_c cannot overlap each other.
+                    # (Skipped entirely when free_adsorption_overlap is True.)
                     start = pair_ready_time[pair]
 
-                    if pair in (pair_b, pair_c):
+                    if not free_adsorption_overlap and pair in (pair_b, pair_c):
                         blocking_pair = pair_c if pair == pair_b else pair_b
                         for row in schedule:
                             if row["Phase"] == "Adsorption" and row["Pair"] == blocking_pair:
@@ -2811,10 +2941,14 @@ with tab4:
             })
         return pd.DataFrame(rows)
 
-    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4 & Best-Yield)", key="adv_generate"):
+    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, Best-Yield & 4-Group)", key="adv_generate"):
         adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_reshuffled = run_advanced_interleaved(PAIRS_RESHUFFLED, PHASE_DURATIONS_BY_PAIR_RESHUFFLED, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
+        adv_schedule_4group = run_advanced_interleaved(
+            PAIRS_4GROUP, PHASE_DURATIONS_BY_PAIR_4GROUP, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
+            free_adsorption_overlap=True,
+        )
 
         st.markdown("## 6-6-4 Configuration")
         st.markdown("### Complete Cycles")
@@ -2903,6 +3037,34 @@ with tab4:
             "Total Energy (kWh)": float(yield_energy_df_reshuffled["Total Energy (kWh)"].sum()),
         }
 
+        st.markdown("## 4-Group Configuration")
+        st.markdown("### Complete Cycles")
+
+        yield_energy_df_4group = _complete_cycles_and_yield_energy(
+            adv_schedule_4group, PAIRS_4GROUP, PAIR_YIELD_PER_CYCLE_4GROUP, PAIR_ENERGY_PER_CYCLE_4GROUP
+        )
+        st.dataframe(yield_energy_df_4group[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
+
+        st.markdown("### Yield & Energy Analysis")
+        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
+        st.dataframe(yield_energy_df_4group, use_container_width=True, hide_index=True)
+
+        ye_metric_col1_4group, ye_metric_col2_4group = st.columns(2)
+        with ye_metric_col1_4group:
+            st.metric("Plant Total Yield", f"{yield_energy_df_4group['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+        with ye_metric_col2_4group:
+            st.metric("Plant Total Energy", f"{yield_energy_df_4group['Total Energy (kWh)'].sum():.1f} kWh")
+
+        st.markdown("### Pair Utilisation & Idle Time")
+        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
+        st.dataframe(_pair_utilization(adv_schedule_4group, PAIRS_4GROUP, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+
+        st.session_state["process_comparison"]["Advanced Interleaved (4-Group)"] = {
+            "Total Cycles": int(yield_energy_df_4group["Complete Cycles"].sum()),
+            "Total Yield (kg CO2)": float(yield_energy_df_4group["Total Yield (kg CO2)"].sum()),
+            "Total Energy (kWh)": float(yield_energy_df_4group["Total Energy (kWh)"].sum()),
+        }
+
         gantt_colors = {
             'Adsorption': '#4B9CD3',
             'Evacuation': '#FFB347',
@@ -2953,6 +3115,11 @@ with tab4:
         with st.expander("Schedule Data (Best-Yield Configuration)"):
             st.dataframe(adv_schedule_reshuffled, use_container_width=True, hide_index=True)
 
+        st.markdown("### Advanced Interleaved Gantt Chart (4-Group Configuration)")
+        _draw_advanced_gantt(adv_schedule_4group, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 4-Group Configuration")
+        with st.expander("Schedule Data (4-Group Configuration)"):
+            st.dataframe(adv_schedule_4group, use_container_width=True, hide_index=True)
+
 with tab5:
     # Cross-process comparison. Reads whatever tab3 (Concurrent/Interleaved) and
     # tab4 (Advanced Interleaved) last published to st.session_state["process_comparison"]
@@ -2969,7 +3136,8 @@ with tab5:
 
     PROCESS_ORDER = [
         "Concurrent", "Interleaved",
-        "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)", "Advanced Interleaved (Best-Yield)",
+        "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)",
+        "Advanced Interleaved (Best-Yield)", "Advanced Interleaved (4-Group)",
     ]
     PROCESS_COLORS = {
         "Concurrent": "#6C5CE7",
@@ -2977,6 +3145,7 @@ with tab5:
         "Advanced Interleaved (6-6-4)": "#2ECC71",
         "Advanced Interleaved (8-4-4)": "#F39C12",
         "Advanced Interleaved (Best-Yield)": "#E74C3C",
+        "Advanced Interleaved (4-Group)": "#9B59B6",
     }
     comparison = st.session_state.get("process_comparison", {})
     available_processes = [p for p in PROCESS_ORDER if p in comparison]
