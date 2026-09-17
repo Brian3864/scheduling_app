@@ -35,14 +35,22 @@ PAIR_YIELD_FORMULA = {
 # comparison in Advanced Interleaved. Reuses the "Group A/B/C" pair names (this
 # config's own dedicated tables, distinguished by section header, not by name) -
 # Group A is the 8-module pair, Groups B and C are the two 4-module pairs. Phase
-# durations AND Energy/Yield both use one Module average per pair (no weighted
-# formula, unlike PAIR_YIELD_FORMULA): Group A from N1N2N3-M1n3, Groups B and C
-# from N1N2-M1n3.
+# durations AND Energy per Cycle both use one Module average per pair: Group A
+# from N1N2N3-M1n3, Groups B and C from N1N2-M1n3.
 PAIRS_8_4_4 = ["Group A", "Group B", "Group C"]
 PAIR_PLANT_MODULE_8_4_4 = {
     "Group A": "N1N2N3-M1n3",
     "Group B": "N1N2-M1n3",
     "Group C": "N1N2-M1n3",
+}
+
+# Yield per Cycle for the 8-4-4 config uses its own different weighted formula
+# (like PAIR_YIELD_FORMULA does for 6-6-4): Group A sums N1N2N3-M1n3 + N3-M2n4,
+# Group B uses N1N2-M1n3 alone, Group C uses N3-M2n4 doubled.
+PAIR_YIELD_FORMULA_8_4_4 = {
+    "Group A": [("N1N2N3-M1n3", 1), ("N3-M2n4", 1)],
+    "Group B": [("N1N2-M1n3", 1)],
+    "Group C": [("N3-M2n4", 2)],
 }
 
 def _plant_cycles_df():
@@ -65,29 +73,27 @@ def _module_average(plant_cycles_df, module):
         round(float(subset["DES CO2 (kg)"].mean()), 2),
     )
 
-def load_plant_cycle_defaults_by_pair(pairs):
+def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
     """Return {pair: (avg eTotal kWh, avg DES CO2 kg)}. Energy per Cycle comes from
-    each pair's single matching Module (PAIR_PLANT_MODULE — same source as phase
-    durations). Yield per Cycle instead comes from a weighted sum of one or more
-    Module averages per PAIR_YIELD_FORMULA. A pair missing from either mapping
-    gets 0.0 for that value."""
+    each pair's single matching Module (energy_module_map). Yield per Cycle instead
+    comes from a weighted sum of one or more Module averages (yield_formula_map,
+    e.g. {"Group A": [("N1N2N3-M1n3", 1), ("N3-M2n4", 1)]}). A pair missing from
+    either mapping gets 0.0 for that value."""
     plant_cycles_df = _plant_cycles_df()
     defaults = {}
     for pair in pairs:
-        energy, _ = _module_average(plant_cycles_df, PAIR_PLANT_MODULE.get(pair))
+        energy, _ = _module_average(plant_cycles_df, energy_module_map.get(pair))
         yield_total = 0.0
-        for module, weight in PAIR_YIELD_FORMULA.get(pair, []):
+        for module, weight in yield_formula_map.get(pair, []):
             _, co2 = _module_average(plant_cycles_df, module)
             yield_total += weight * co2
         defaults[pair] = (round(energy, 2), round(yield_total, 2))
     return defaults
 
-def load_plant_cycle_defaults_simple(pairs, pair_module_map):
-    """Return {pair: (avg eTotal kWh, avg DES CO2 kg)} using one Module average per
-    pair for BOTH Energy and Yield equally — no weighted formula, unlike
-    load_plant_cycle_defaults_by_pair. Used for the 8-4-4 comparison config."""
-    plant_cycles_df = _plant_cycles_df()
-    return {pair: _module_average(plant_cycles_df, pair_module_map.get(pair)) for pair in pairs}
+def load_plant_cycle_defaults_by_pair(pairs):
+    """load_plant_cycle_defaults_weighted for the 6-6-4 config's own sourcing
+    (PAIR_PLANT_MODULE for Energy, PAIR_YIELD_FORMULA for Yield)."""
+    return load_plant_cycle_defaults_weighted(pairs, PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA)
 
 # Full Schedule Analysis's two pairs (Group A, Group B; 8 modules each) don't map to
 # a single Module value in the plant log the way tab4's pairs do, so both pairs
@@ -2370,11 +2376,12 @@ with tab4:
         for pair in PAIRS_8_4_4
     }
 
-    pair_plant_defaults_844 = load_plant_cycle_defaults_simple(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
-    # Bumped because the row VALUES (pair names) changed from "Pair (8)/(4a)/(4b)"
-    # to "Group A/B/C" — the column names alone (["Pair", ...]) didn't change, so
-    # get_versioned_default_table's structural check wouldn't have caught this.
-    ENERGY_YIELD_844_VERSION = 2
+    pair_plant_defaults_844 = load_plant_cycle_defaults_weighted(
+        PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4
+    )
+    # Bumped because Yield per Cycle sourcing changed from the simple single-Module
+    # average (matching Energy) to PAIR_YIELD_FORMULA_8_4_4's weighted sum.
+    ENERGY_YIELD_844_VERSION = 3
     energy_yield_844_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_844", energy_yield_844_cols, ENERGY_YIELD_844_VERSION,
@@ -2385,8 +2392,10 @@ with tab4:
         }),
     )
     st.caption(
-        "Energy & Yield per cycle, same sourcing as phase durations (no summing/weighting): "
-        "Group A (8-module pair) from N1N2N3-M1n3, Groups B and C (4-module pairs) from N1N2-M1n3."
+        "Energy per Cycle uses the same sourcing as phase durations: Group A (8-module pair) from "
+        "N1N2N3-M1n3, Groups B and C (4-module pairs) from N1N2-M1n3. Yield per Cycle instead uses "
+        "a different formula per pair (PAIR_YIELD_FORMULA_8_4_4): Group A from N1N2N3-M1n3 + N3-M2n4 "
+        "summed, Group B from N1N2-M1n3 alone, Group C from N3-M2n4 doubled."
     )
     energy_yield_table_844 = st.data_editor(
         st.session_state.energy_yield_tab4_844,
