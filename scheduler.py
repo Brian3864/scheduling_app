@@ -2664,6 +2664,33 @@ with tab4:
             })
         return pd.DataFrame(rows)
 
+    def _pair_utilization(schedule_df, pairs, total_minutes):
+        """Per-pair Active/Idle time and Utilisation %, same idea as tab3's
+        compute_module_metrics but per Pair instead of per Module — this scheduler
+        doesn't track individual modules within a pair."""
+        rows = []
+        for pair in pairs:
+            pair_df = schedule_df[schedule_df["Pair"] == pair]
+            if len(pair_df) == 0:
+                rows.append({
+                    "Pair": pair, "Active (min)": 0, "Idle (min)": total_minutes,
+                    "Adsorption (min)": 0, "Utilisation %": 0, "Adsorption Utilisation %": 0,
+                })
+                continue
+            active = int((pair_df["End"] - pair_df["Start"]).sum())
+            ads_df = pair_df[pair_df["Phase"] == "Adsorption"]
+            ads_time = int((ads_df["End"] - ads_df["Start"]).sum()) if len(ads_df) > 0 else 0
+            idle = max(0, total_minutes - active)
+            rows.append({
+                "Pair": pair,
+                "Active (min)": active,
+                "Idle (min)": idle,
+                "Adsorption (min)": ads_time,
+                "Utilisation %": round(100 * active / total_minutes, 1) if total_minutes > 0 else 0,
+                "Adsorption Utilisation %": round(100 * ads_time / total_minutes, 1) if total_minutes > 0 else 0,
+            })
+        return pd.DataFrame(rows)
+
     if st.button("Generate Advanced Interleaved Schedules (6-6-4 & 8-4-4)", key="adv_generate"):
         adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
@@ -2683,6 +2710,10 @@ with tab4:
             st.metric("Plant Total Yield", f"{yield_energy_df['Total Yield (kg CO2)'].sum():.1f} kg CO2")
         with ye_metric_col2:
             st.metric("Plant Total Energy", f"{yield_energy_df['Total Energy (kWh)'].sum():.1f} kWh")
+
+        st.markdown("### Pair Utilisation & Idle Time")
+        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
+        st.dataframe(_pair_utilization(adv_schedule, PAIRS, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
 
         # Publish totals for the Yield vs Cycles comparison tab. Only refreshes when
         # this "Generate" button is (re)clicked — see that tab's caption for why.
@@ -2710,6 +2741,10 @@ with tab4:
             st.metric("Plant Total Yield", f"{yield_energy_df_844['Total Yield (kg CO2)'].sum():.1f} kg CO2")
         with ye_metric_col2_844:
             st.metric("Plant Total Energy", f"{yield_energy_df_844['Total Energy (kWh)'].sum():.1f} kWh")
+
+        st.markdown("### Pair Utilisation & Idle Time")
+        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
+        st.dataframe(_pair_utilization(adv_schedule_844, PAIRS_8_4_4, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
 
         # Publish 8-4-4 totals too, alongside the 6-6-4 entry above.
         st.session_state["process_comparison"]["Advanced Interleaved (8-4-4)"] = {
