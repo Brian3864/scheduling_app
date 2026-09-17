@@ -53,6 +53,26 @@ PAIR_YIELD_FORMULA_8_4_4 = {
     "Group C": [("N3-M2n4", 2)],
 }
 
+# "Best Yield" configuration: a deliberately unrealistic, not-tied-to-any-real-
+# physical-module-grouping setup, built purely to see the highest Total Yield the
+# app's existing mechanics can produce. Yield (and Energy) per Cycle use the
+# single highest observed Yield rate in the whole plant log (N1N2N3-M1n3, 11.43
+# kg CO2/cycle), applied to all three pairs alike. Phase durations mix whichever
+# Module combination has the SHORTEST average for EACH INDIVIDUAL phase (a
+# different, unrelated combination per phase) to also maximize cycle count -
+# so this is the best case from combining best-of-breed numbers that never
+# actually occur together in the real plant, not a real achievable schedule.
+PAIRS_BEST_YIELD = ["Group A", "Group B", "Group C"]
+BEST_YIELD_MODULE = "N1N2N3-M1n3"
+BEST_YIELD_PHASE_DURATIONS = {
+    "Adsorption": 61.2,   # shortest: N1-M1n3
+    "Evacuation": 1.4,    # shortest: N2-M2n4 / N3-M2n4
+    "NCG Purging": 10.0,  # same across every module
+    "Heating": 25.4,      # shortest: N1N2-M1n3
+    "CO2 Purging": 2.1,   # shortest: N1-M1n3
+    "Cooling": 6.8,        # shortest: N1-M1n3
+}
+
 def _plant_cycles_df():
     """Load the plant cycle log, or None if it's missing/malformed."""
     try:
@@ -234,11 +254,12 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
 - Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
+- Three configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings), plus an experimental Best-Yield configuration that mixes the highest observed Yield rate with the shortest observed phase durations (from unrelated module combinations) to show the highest Total Yield the app's mechanics can produce — not a real achievable schedule
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across four processes: Concurrent, Interleaved, Advanced Interleaved (6-6-4), and Advanced Interleaved (8-4-4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across five processes: Concurrent, Interleaved, and all three Advanced Interleaved configurations (6-6-4, 8-4-4, and the experimental Best-Yield). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -2419,6 +2440,90 @@ with tab4:
         for pair in PAIRS_8_4_4
     }
 
+    # === "Best Yield" experimental configuration ===
+    st.markdown("### Best-Yield Configuration (Experimental)")
+    st.caption(
+        "Not a real operating mode — mixes the single highest observed Yield rate (N1N2N3-M1n3) "
+        "with the shortest observed duration for each individual phase, regardless of which module "
+        "combination it came from, to see the highest Total Yield the app's mechanics can produce. "
+        "See BEST_YIELD_PHASE_DURATIONS / BEST_YIELD_MODULE near the top of the file."
+    )
+
+    adv_phase_columns_best = ["Phase"] + [f"{p} (min)" for p in PAIRS_BEST_YIELD]
+    ADV_PHASE_DURATIONS_BEST_VERSION = 1
+
+    def _best_yield_phase_durations():
+        return [BEST_YIELD_PHASE_DURATIONS.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+
+    get_versioned_default_table(
+        "adv_phase_durations_best", adv_phase_columns_best, ADV_PHASE_DURATIONS_BEST_VERSION,
+        lambda: pd.DataFrame({
+            "Phase": PHASES,
+            "Group A (min)": _best_yield_phase_durations(),
+            "Group B (min)": _best_yield_phase_durations(),
+            "Group C (min)": _best_yield_phase_durations(),
+        }),
+    )
+    adv_phase_table_best = st.data_editor(
+        st.session_state.adv_phase_durations_best,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+        },
+        key="adv_phase_editor_best",
+    )
+    st.session_state.adv_phase_durations_best = adv_phase_table_best
+
+    PHASE_DURATIONS_BY_PAIR_BEST = {
+        pair: {
+            phase: int(
+                adv_phase_table_best.loc[
+                    adv_phase_table_best["Phase"] == phase,
+                    f"{pair} (min)"
+                ].iloc[0]
+            )
+            for phase in PHASES
+        }
+        for pair in PAIRS_BEST_YIELD
+    }
+
+    best_yield_energy, best_yield_co2 = _module_average(_plant_cycles_df(), BEST_YIELD_MODULE)
+    ENERGY_YIELD_BEST_VERSION = 1
+    energy_yield_best_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+    get_versioned_default_table(
+        "energy_yield_tab4_best", energy_yield_best_cols, ENERGY_YIELD_BEST_VERSION,
+        lambda: pd.DataFrame({
+            "Pair": PAIRS_BEST_YIELD,
+            "Energy per Cycle (kWh)": [best_yield_energy] * len(PAIRS_BEST_YIELD),
+            "Yield per Cycle (kg CO2)": [best_yield_co2] * len(PAIRS_BEST_YIELD),
+        }),
+    )
+    energy_yield_table_best = st.data_editor(
+        st.session_state.energy_yield_tab4_best,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pair": st.column_config.TextColumn("Pair", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_best",
+    )
+    st.session_state.energy_yield_tab4_best = energy_yield_table_best
+
+    PAIR_ENERGY_PER_CYCLE_BEST = {
+        pair: float(energy_yield_table_best.loc[energy_yield_table_best["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+        for pair in PAIRS_BEST_YIELD
+    }
+    PAIR_YIELD_PER_CYCLE_BEST = {
+        pair: float(energy_yield_table_best.loc[energy_yield_table_best["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+        for pair in PAIRS_BEST_YIELD
+    }
+
     def run_advanced_interleaved(pairs, phase_durations_by_pair, total_minutes, enforce_evac_cool):
         """
         Advanced 3-pair interleaved scheduler. Builds a schedule by repeatedly giving
@@ -2691,9 +2796,10 @@ with tab4:
             })
         return pd.DataFrame(rows)
 
-    if st.button("Generate Advanced Interleaved Schedules (6-6-4 & 8-4-4)", key="adv_generate"):
+    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4 & Best-Yield)", key="adv_generate"):
         adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
+        adv_schedule_best = run_advanced_interleaved(PAIRS_BEST_YIELD, PHASE_DURATIONS_BY_PAIR_BEST, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
 
         st.markdown("## 6-6-4 Configuration")
         st.markdown("### Complete Cycles")
@@ -2753,6 +2859,35 @@ with tab4:
             "Total Energy (kWh)": float(yield_energy_df_844["Total Energy (kWh)"].sum()),
         }
 
+        st.markdown("## Best-Yield Configuration (Experimental)")
+        st.markdown("### Complete Cycles")
+
+        yield_energy_df_best = _complete_cycles_and_yield_energy(
+            adv_schedule_best, PAIRS_BEST_YIELD, PAIR_YIELD_PER_CYCLE_BEST, PAIR_ENERGY_PER_CYCLE_BEST
+        )
+        st.dataframe(yield_energy_df_best[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
+
+        st.markdown("### Yield & Energy Analysis")
+        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
+        st.dataframe(yield_energy_df_best, use_container_width=True, hide_index=True)
+
+        ye_metric_col1_best, ye_metric_col2_best = st.columns(2)
+        with ye_metric_col1_best:
+            st.metric("Plant Total Yield", f"{yield_energy_df_best['Total Yield (kg CO2)'].sum():.1f} kg CO2")
+        with ye_metric_col2_best:
+            st.metric("Plant Total Energy", f"{yield_energy_df_best['Total Energy (kWh)'].sum():.1f} kWh")
+
+        st.markdown("### Pair Utilisation & Idle Time")
+        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
+        st.dataframe(_pair_utilization(adv_schedule_best, PAIRS_BEST_YIELD, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+
+        # Publish Best-Yield totals too, alongside 6-6-4 and 8-4-4 above.
+        st.session_state["process_comparison"]["Advanced Interleaved (Best-Yield)"] = {
+            "Total Cycles": int(yield_energy_df_best["Complete Cycles"].sum()),
+            "Total Yield (kg CO2)": float(yield_energy_df_best["Total Yield (kg CO2)"].sum()),
+            "Total Energy (kWh)": float(yield_energy_df_best["Total Energy (kWh)"].sum()),
+        }
+
         gantt_colors = {
             'Adsorption': '#4B9CD3',
             'Evacuation': '#FFB347',
@@ -2798,6 +2933,11 @@ with tab4:
         with st.expander("Schedule Data (8-4-4 Configuration)"):
             st.dataframe(adv_schedule_844, use_container_width=True, hide_index=True)
 
+        st.markdown("### Advanced Interleaved Gantt Chart (Best-Yield Configuration)")
+        _draw_advanced_gantt(adv_schedule_best, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - Best-Yield Configuration")
+        with st.expander("Schedule Data (Best-Yield Configuration)"):
+            st.dataframe(adv_schedule_best, use_container_width=True, hide_index=True)
+
 with tab5:
     # Cross-process comparison. Reads whatever tab3 (Concurrent/Interleaved) and
     # tab4 (Advanced Interleaved) last published to st.session_state["process_comparison"]
@@ -2812,12 +2952,16 @@ with tab5:
         "its numbers here."
     )
 
-    PROCESS_ORDER = ["Concurrent", "Interleaved", "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)"]
+    PROCESS_ORDER = [
+        "Concurrent", "Interleaved",
+        "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)", "Advanced Interleaved (Best-Yield)",
+    ]
     PROCESS_COLORS = {
         "Concurrent": "#6C5CE7",
         "Interleaved": "#E07C5E",
         "Advanced Interleaved (6-6-4)": "#2ECC71",
         "Advanced Interleaved (8-4-4)": "#F39C12",
+        "Advanced Interleaved (Best-Yield)": "#E74C3C",
     }
     comparison = st.session_state.get("process_comparison", {})
     available_processes = [p for p in PROCESS_ORDER if p in comparison]
