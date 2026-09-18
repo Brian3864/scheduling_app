@@ -82,18 +82,15 @@ PAIR_YIELD_FORMULA_RESHUFFLED = {
 }
 
 # "4-Group" configuration: extends the reshuffle above with a 4th pair (Group D)
-# to cover Nelion 4 and Nelion 1's M2/M4, neither of which has ANY recorded
-# cycles in either CSV. Per instruction, these are extrapolated as behaving like
-# Nelion 3's M2/M4 (N3-M2n4) — the only real M2n4 data available at all besides
-# N2's. Group D represents 4 modules (N1's M2 & M4, plus N4's M2 & M4): its
-# phase durations are N3-M2n4's own real timing (both extrapolated units are
-# assumed to cycle the same way N3's does), and its Energy/Yield per Cycle is
-# N3-M2n4's rate DOUBLED — two independent N3-M2n4-like units combined into one
-# pair, the same "x2" pattern already used for the 6-6-4 configuration's Group B.
-# This covers 14 of the 16 modules; Nelion 4's M1 & M3 (2 modules) are still not
-# represented, since there's no real single-Nelion M1n3 duration profile to
-# extrapolate from (only the 3-Nelion-combined N1N2N3-M1n3, or the
-# statistically unreliable single-sample N1-M1n3).
+# to cover the full 16 modules. Group D represents 6 modules that have ZERO
+# recorded cycles in either CSV — Nelion 1's M2 & M4, and all of Nelion 4 (M1,
+# M2, M3, M4) — all extrapolated per instruction as behaving like Nelion 3's
+# M2/M4 (N3-M2n4), the closest and most reliable real analogue available. Group
+# D's phase durations are N3-M2n4's own real timing, and its Energy/Yield per
+# Cycle is N3-M2n4's rate TRIPLED — three independent N3-M2n4-like 2-module
+# units combined into one pair (N1's M2/M4, N4's M1/M3, N4's M2/M4), the same
+# "xN" pattern already used for the 6-6-4 configuration's Group B (x2). With
+# Group A/B/C's 10 modules, this reaches all 16.
 #
 # The scheduler's original "one privileged pair overlaps, the other two don't
 # overlap each other" Adsorption rule doesn't generalize to a 4th pair without
@@ -106,13 +103,13 @@ PAIR_MODULE_4GROUP = {
     "Group A": "N1N2N3-M1n3",
     "Group B": "N3-M2n4",
     "Group C": "N2-M2n4",
-    "Group D": "N3-M2n4",  # extrapolated: stands in for N1's + N4's M2/M4
+    "Group D": "N3-M2n4",  # extrapolated: stands in for N1's M2/M4 + all of N4
 }
 PAIR_YIELD_FORMULA_4GROUP = {
     "Group A": [("N1N2N3-M1n3", 1)],
     "Group B": [("N3-M2n4", 1)],
     "Group C": [("N2-M2n4", 1)],
-    "Group D": [("N3-M2n4", 2)],
+    "Group D": [("N3-M2n4", 3)],
 }
 
 def _plant_cycles_df():
@@ -296,7 +293,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
 - Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
-- Four configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings, 3 pairs each), Best-Yield (3 non-overlapping real Module combinations, covering 10 of 16 modules), and 4-Group (adds a 4th pair extrapolating Nelion 4 and Nelion 1's M2/M4 from Nelion 3's real data, covering 14 of 16 modules) — the 4-Group configuration also allows every pair's Adsorption to overlap freely, since the original 3-pair overlap rule doesn't generalize to a 4th pair without an unverified assumption
+- Four configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings, 3 pairs each), Best-Yield (3 non-overlapping real Module combinations, covering 10 of 16 modules), and 4-Group (adds a 4th pair extrapolating Nelion 1's M2/M4 and all of Nelion 4 from Nelion 3's real data, covering all 16 modules) — the 4-Group configuration also allows every pair's Adsorption to overlap freely, since the original 3-pair overlap rule doesn't generalize to a 4th pair without an unverified assumption
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
@@ -2577,12 +2574,11 @@ with tab4:
     st.markdown("### 4-Group Configuration (Adsorption Overlap Allowed)")
     st.caption(
         "Adds a 4th pair, Group D, to the reshuffle above: Group A = N1N2N3-M1n3 (6 modules), "
-        "Group B = N3-M2n4 (2), Group C = N2-M2n4 (2), Group D = 4 modules (N1's M2 & M4, plus "
-        "N4's M2 & M4) extrapolated from N3-M2n4's real data doubled, since neither N1's M2/M4 nor "
-        "any of Nelion 4 has recorded cycles in either CSV. Covers 14 of 16 modules — Nelion 4's "
-        "M1 & M3 still aren't represented; there's no real single-Nelion M1n3 duration profile to "
-        "extrapolate from. Because there's no known fan-sharing constraint for a 4th pair, every "
-        "pair's Adsorption is allowed to overlap freely with every other pair's here."
+        "Group B = N3-M2n4 (2), Group C = N2-M2n4 (2), Group D = 6 modules (N1's M2 & M4, plus "
+        "all of Nelion 4) extrapolated from N3-M2n4's real data tripled, since none of those have "
+        "any recorded cycles in either CSV. Together these cover all 16 modules. Because there's "
+        "no known fan-sharing constraint for a 4th pair, every pair's Adsorption is allowed to "
+        "overlap freely with every other pair's here."
     )
 
     adv_phase_columns_4group = ["Phase"] + [f"{p} (min)" for p in PAIRS_4GROUP]
@@ -2634,7 +2630,7 @@ with tab4:
     pair_plant_defaults_4group = load_plant_cycle_defaults_weighted(
         PAIRS_4GROUP, PAIR_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
     )
-    ENERGY_YIELD_4GROUP_VERSION = 1
+    ENERGY_YIELD_4GROUP_VERSION = 2
     energy_yield_4group_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_4group", energy_yield_4group_cols, ENERGY_YIELD_4GROUP_VERSION,
