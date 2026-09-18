@@ -84,13 +84,15 @@ PAIR_YIELD_FORMULA_RESHUFFLED = {
 # "4-Group" configuration: extends the reshuffle above with a 4th pair (Group D)
 # to cover the full 16 modules. Group D represents 6 modules that have ZERO
 # recorded cycles in either CSV — Nelion 1's M2 & M4, and all of Nelion 4 (M1,
-# M2, M3, M4) — all extrapolated per instruction as behaving like Nelion 3's
-# M2/M4 (N3-M2n4), the closest and most reliable real analogue available. Group
-# D's phase durations are N3-M2n4's own real timing, and its Energy/Yield per
-# Cycle is N3-M2n4's rate TRIPLED — three independent N3-M2n4-like 2-module
-# units combined into one pair (N1's M2/M4, N4's M1/M3, N4's M2/M4), the same
-# "xN" pattern already used for the 6-6-4 configuration's Group B (x2). With
-# Group A/B/C's 10 modules, this reaches all 16.
+# M2, M3, M4). Its Energy/Yield per Cycle is N3-M2n4's rate TRIPLED — three
+# independent N3-M2n4-like 2-module units combined into one pair, the same "xN"
+# pattern already used for the 6-6-4 configuration's Group B (x2). Its phase
+# DURATIONS, though, come from N1N2N3-M1n3 instead of N3-M2n4: a 2-module
+# combination's cycle timing doesn't represent a 6-module pair well, so
+# duration is deliberately sourced separately from a larger real combination
+# (hence two separate maps below — duration and energy/yield are allowed to
+# diverge per pair, same as the 6-6-4 configuration's Energy vs. Yield split).
+# With Group A/B/C's 10 modules, this reaches all 16.
 #
 # The scheduler's original "one privileged pair overlaps, the other two don't
 # overlap each other" Adsorption rule doesn't generalize to a 4th pair without
@@ -99,11 +101,17 @@ PAIR_YIELD_FORMULA_RESHUFFLED = {
 # every other pair's (see the free_adsorption_overlap argument on
 # run_advanced_interleaved).
 PAIRS_4GROUP = ["Group A", "Group B", "Group C", "Group D"]
-PAIR_MODULE_4GROUP = {
+PAIR_DURATION_MODULE_4GROUP = {
     "Group A": "N1N2N3-M1n3",
     "Group B": "N3-M2n4",
     "Group C": "N2-M2n4",
-    "Group D": "N3-M2n4",  # extrapolated: stands in for N1's M2/M4 + all of N4
+    "Group D": "N1N2N3-M1n3",  # a 6-module pair's timing better matches this larger combination
+}
+PAIR_ENERGY_MODULE_4GROUP = {
+    "Group A": "N1N2N3-M1n3",
+    "Group B": "N3-M2n4",
+    "Group C": "N2-M2n4",
+    "Group D": "N3-M2n4",  # Energy per Cycle still N3-M2n4 (x1) — only Yield is tripled below
 }
 PAIR_YIELD_FORMULA_4GROUP = {
     "Group A": [("N1N2N3-M1n3", 1)],
@@ -2587,15 +2595,17 @@ with tab4:
     st.caption(
         "Adds a 4th pair, Group D, to the reshuffle above: Group A = N1N2N3-M1n3 (6 modules), "
         "Group B = N3-M2n4 (2), Group C = N2-M2n4 (2), Group D = 6 modules (N1's M2 & M4, plus "
-        "all of Nelion 4) extrapolated from N3-M2n4's real data tripled, since none of those have "
-        "any recorded cycles in either CSV. Together these cover all 16 modules. Because there's "
-        "no known fan-sharing constraint for a 4th pair, every pair's Adsorption is allowed to "
-        "overlap freely with every other pair's here."
+        "all of Nelion 4), since none of those have any recorded cycles in either CSV. Group D's "
+        "Energy per Cycle and Yield per Cycle (tripled) are extrapolated from N3-M2n4's real data, "
+        "but its phase durations instead come from N1N2N3-M1n3 — a 2-module combination's cycle "
+        "timing doesn't represent a 6-module pair well. Together these cover all 16 modules. "
+        "Because there's no known fan-sharing constraint for a 4th pair, every pair's Adsorption "
+        "is allowed to overlap freely with every other pair's here."
     )
 
     adv_phase_columns_4group = ["Phase"] + [f"{p} (min)" for p in PAIRS_4GROUP]
-    stage_defaults_4group = load_stage_duration_defaults_by_pair(PAIRS_4GROUP, PAIR_MODULE_4GROUP)
-    ADV_PHASE_DURATIONS_4GROUP_VERSION = 1
+    stage_defaults_4group = load_stage_duration_defaults_by_pair(PAIRS_4GROUP, PAIR_DURATION_MODULE_4GROUP)
+    ADV_PHASE_DURATIONS_4GROUP_VERSION = 2
 
     def _pair_phase_durations_4group(pair):
         pair_defaults = stage_defaults_4group.get(pair, {})
@@ -2640,9 +2650,9 @@ with tab4:
     }
 
     pair_plant_defaults_4group = load_plant_cycle_defaults_weighted(
-        PAIRS_4GROUP, PAIR_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
+        PAIRS_4GROUP, PAIR_ENERGY_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
     )
-    ENERGY_YIELD_4GROUP_VERSION = 2
+    ENERGY_YIELD_4GROUP_VERSION = 3
     energy_yield_4group_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_4group", energy_yield_4group_cols, ENERGY_YIELD_4GROUP_VERSION,
