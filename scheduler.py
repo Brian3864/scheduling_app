@@ -127,9 +127,8 @@ PAIR_YIELD_FORMULA_4GROUP = {
 # own, so per instruction every group's phase durations AND Energy per Cycle
 # come from N1N2-M1n3's own real average. Yield per Cycle instead splits: Group
 # A and Group B keep N1N2-M1n3's own real Yield, while Group C and Group D use
-# N3-M2n4's real Yield QUADRUPLED (representing their 4 modules as two
-# N3-M2n4-like 2-module units doubled again). Adsorption overlap is
-# unrestricted for all 4 pairs, same as the 4-Group configuration.
+# N3-M2n4's real Yield DOUBLED. Adsorption overlap is unrestricted for all 4
+# pairs, same as the 4-Group configuration.
 PAIRS_4X4 = ["Group A", "Group B", "Group C", "Group D"]
 PAIR_MODULE_4X4 = {
     "Group A": "N1N2-M1n3",
@@ -140,8 +139,8 @@ PAIR_MODULE_4X4 = {
 PAIR_YIELD_FORMULA_4X4 = {
     "Group A": [("N1N2-M1n3", 1)],
     "Group B": [("N1N2-M1n3", 1)],
-    "Group C": [("N3-M2n4", 4)],
-    "Group D": [("N3-M2n4", 4)],
+    "Group C": [("N3-M2n4", 2)],
+    "Group D": [("N3-M2n4", 2)],
 }
 
 @st.cache_data
@@ -2716,7 +2715,7 @@ with tab4:
         "actually recorded, so every pair's phase durations and Energy per Cycle come from "
         "N1N2-M1n3's own real average. Yield per Cycle differs: Group A and Group B keep "
         "N1N2-M1n3's own real Yield, while Group C and Group D use N3-M2n4's real Yield "
-        "quadrupled. Adsorption overlap is unrestricted for all 4 pairs."
+        "doubled. Adsorption overlap is unrestricted for all 4 pairs."
     )
 
     adv_phase_columns_4x4 = ["Phase"] + [f"{p} (min)" for p in PAIRS_4X4]
@@ -2768,7 +2767,7 @@ with tab4:
     pair_plant_defaults_4x4 = load_plant_cycle_defaults_weighted(
         PAIRS_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
     )
-    ENERGY_YIELD_4X4_VERSION = 1
+    ENERGY_YIELD_4X4_VERSION = 2
     energy_yield_4x4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_4x4", energy_yield_4x4_cols, ENERGY_YIELD_4X4_VERSION,
