@@ -112,8 +112,12 @@ PAIR_YIELD_FORMULA_4GROUP = {
     "Group D": [("N3-M2n4", 3)],
 }
 
+@st.cache_data
 def _plant_cycles_df():
-    """Load the plant cycle log, or None if it's missing/malformed."""
+    """Load the plant cycle log, or None if it's missing/malformed. Cached since
+    every pair-default lookup across both tabs re-reads this same static file —
+    without caching, Streamlit was re-parsing it from disk multiple times on
+    every single rerun (any widget interaction anywhere in the whole app)."""
     try:
         return pd.read_csv(PLANT_CYCLES_CSV)
     except (FileNotFoundError, KeyError, ValueError):
@@ -199,6 +203,16 @@ CORE_PHASE_FALLBACK_DURATIONS = {
     "Heating": 20, "CO2 Purging": 40, "Cooling": 30,
 }
 
+@st.cache_data
+def _stage_timestamps_df():
+    """Load the stage-duration log, or None if it's missing/malformed. Cached for
+    the same reason as _plant_cycles_df() — this file is re-read for every
+    configuration's phase-duration defaults on every rerun otherwise."""
+    try:
+        return pd.read_csv(STAGE_TIMESTAMPS_CSV)
+    except (FileNotFoundError, KeyError, ValueError):
+        return None
+
 # The log has no Repressurization column at all, so that phase always keeps
 # whatever value is already in the table (originally defaulted to 5 minutes).
 def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
@@ -208,9 +222,8 @@ def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     file/module/phase simply has no entry for it — callers should fall back to
     their own default."""
     pair_module_map = pair_module_map if pair_module_map is not None else PAIR_PLANT_MODULE
-    try:
-        stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
-    except (FileNotFoundError, KeyError, ValueError):
+    stage_df = _stage_timestamps_df()
+    if stage_df is None:
         return {pair: {} for pair in pairs}
 
     defaults = {}
@@ -237,9 +250,8 @@ def load_stage_duration_defaults_tab3():
     Group A and Group B in Full Schedule Analysis, sourced directly from
     TAB3_PHASE_DURATION_MODULE's own per-phase averages (no summing). Falls back
     to CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no matching rows."""
-    try:
-        stage_df = pd.read_csv(STAGE_TIMESTAMPS_CSV)
-    except (FileNotFoundError, KeyError, ValueError):
+    stage_df = _stage_timestamps_df()
+    if stage_df is None:
         return dict(CORE_PHASE_FALLBACK_DURATIONS)
 
     subset = stage_df[stage_df["Module"] == TAB3_PHASE_DURATION_MODULE]
