@@ -150,10 +150,10 @@ PAIR_YIELD_FORMULA_4X4 = {
 # nothing in the data comes in a 5-module unit) both take their phase
 # durations from N1N2-M1n3 — the closest well-sampled real combination in
 # size, so their cycle timing stays realistic rather than borrowing a
-# 2-module combination's much shorter cycle — but their Yield per Cycle uses
-# N3-M2n4's real Yield TRIPLED, the same boost already used for the 4-Group
-# configuration's Group D, since that is the highest Yield achievable from
-# any real combination in the data via this pattern. This is a 3-pair
+# 2-module combination's much shorter cycle — but their Yield per Cycle
+# instead uses weighted sums of N2-M2n4/N3-M2n4: Group B = N2-M2n4 + N3-M2n4
+# + half of N3-M2n4 (i.e. N3-M2n4 x1.5), Group C = N3-M2n4 x4 + half of
+# N3-M2n4 (i.e. N3-M2n4 x4.5). This is a 3-pair
 # configuration, so it uses the ORIGINAL Adsorption-overlap rule (Group A can
 # overlap with Group B/C; Group B and Group C cannot overlap each other) —
 # no relaxation needed, unlike the 4-pair configurations above.
@@ -170,8 +170,8 @@ PAIR_ENERGY_MODULE_6_5_5 = {
 }
 PAIR_YIELD_FORMULA_6_5_5 = {
     "Group A": [("N1N2N3-M1n3", 1)],
-    "Group B": [("N3-M2n4", 3)],
-    "Group C": [("N3-M2n4", 3)],
+    "Group B": [("N2-M2n4", 1), ("N3-M2n4", 1), ("N3-M2n4", 0.5)],
+    "Group C": [("N3-M2n4", 4), ("N3-M2n4", 0.5)],
 }
 
 @st.cache_data
@@ -2889,7 +2889,7 @@ with tab4:
     pair_plant_defaults_655 = load_plant_cycle_defaults_weighted(
         PAIRS_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
     )
-    ENERGY_YIELD_655_VERSION = 1
+    ENERGY_YIELD_655_VERSION = 2
     energy_yield_655_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
         "energy_yield_tab4_655", energy_yield_655_cols, ENERGY_YIELD_655_VERSION,
