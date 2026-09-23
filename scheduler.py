@@ -94,6 +94,11 @@ PAIR_YIELD_FORMULA_4GROUP = {
     "Group C": [("N2-M2n4", 1)],
     "Group D": [("N3-M2n4", 3)],
 }
+# Only Group D's real modules diverge from its data sources — the other three
+# pairs' physical modules ARE their (single, un-extrapolated) source combo.
+REPRESENTS_4GROUP = {
+    "Group D": "N1-M2, N1-M4, N4-M1, N4-M2, N4-M3, N4-M4 (no recorded cycles for any of these)",
+}
 
 # "4-4-4-4" configuration: 4 equal 4-module pairs, one per Nelion-pair x position
 # combination — Group A = N1&N2's M1/M3, Group B = N1&N2's M2/M4, Group C =
@@ -116,6 +121,14 @@ PAIR_YIELD_FORMULA_4X4 = {
     "Group B": [("N1N2-M1n3", 1)],
     "Group C": [("N3-M2n4", 2)],
     "Group D": [("N3-M2n4", 2)],
+}
+# Group A's real modules match its source combo exactly; Groups B/C/D each
+# represent a different physical 4-module combination than the one they
+# borrow real averages from (none of the three has its own recorded data).
+REPRESENTS_4X4 = {
+    "Group B": "N1-M2, N1-M4, N2-M2, N2-M4 (not directly recorded)",
+    "Group C": "N3-M1, N3-M3, N4-M1, N4-M3 (not directly recorded)",
+    "Group D": "N3-M2, N3-M4, N4-M2, N4-M4 (not directly recorded)",
 }
 
 # "6-5-5" configuration: 3 pairs (16 = 6+5+5), chosen for the best achievable
@@ -148,6 +161,14 @@ PAIR_YIELD_FORMULA_6_5_5 = {
     "Group B": [("N2-M2n4", 1), ("N3-M2n4", 1), ("N3-M2n4", 0.5)],
     "Group C": [("N3-M2n4", 2), ("N3-M2n4", 0.5)],
 }
+# Group A's real modules match its source combo exactly (both are the same
+# 6-module N1N2N3-M1n3 combination). Groups B and C are each "5 modules" only
+# because that's the size needed to reach 16 — no real 5-module combination
+# exists in the data, so their exact module composition is unspecified.
+REPRESENTS_6_5_5 = {
+    "Group B": "5 modules — exact composition unspecified (no real 5-module combination in the data)",
+    "Group C": "5 modules — exact composition unspecified (no real 5-module combination in the data)",
+}
 
 @st.cache_data
 def _plant_cycles_df():
@@ -172,6 +193,45 @@ def _module_average(plant_cycles_df, module):
         round(float(subset["eTotal kWh"].mean()), 2),
         round(float(subset["DES CO2 (kg)"].mean()), 2),
     )
+
+def _decode_module_combo(combo):
+    """Expand a 'N1N2N3-M1n3' style combo name into its underlying module list,
+    e.g. ['N1-M1', 'N1-M3', 'N2-M1', 'N2-M3', 'N3-M1', 'N3-M3']. Combo names are
+    always '<Nelions>-M<a>n<b>', where <Nelions> is one or more 'N<digit>' runs."""
+    nelions_part, positions_part = combo.split("-")
+    nelions = [nelions_part[i:i + 2] for i in range(0, len(nelions_part), 2)]
+    positions = [positions_part[0:2], "M" + positions_part[3]]
+    return [f"{nelion}-{position}" for nelion in nelions for position in positions]
+
+def _format_module_combo(combo):
+    """'N1N2N3-M1n3' -> 'N1N2N3-M1n3 (N1-M1, N1-M3, N2-M1, N2-M3, N3-M1, N3-M3)'."""
+    return f"{combo} ({', '.join(_decode_module_combo(combo))})"
+
+def _format_yield_formula(formula):
+    """[('N3-M2n4', 3)] -> 'N3-M2n4 × 3'; [('A', 1), ('B', 0.5)] -> 'A + B × 0.5'."""
+    parts = []
+    for module, weight in formula:
+        parts.append(module if weight == 1 else f"{module} × {weight:g}")
+    return " + ".join(parts)
+
+def module_mapping_table(pairs, duration_module_map, energy_module_map, yield_formula_map, represents_map=None):
+    """Per-pair table showing which real Module combination sources that pair's
+    phase Duration, Energy per Cycle, and Yield per Cycle — i.e. how modules
+    from the CSV data are paired up to represent each configuration's pairs.
+    When a pair's actual physical module composition differs from (or isn't
+    fully covered by) its data source — e.g. an extrapolated pair, or a pair
+    sized differently from any real combination — pass its description in
+    represents_map so the table doesn't imply the source IS the pair."""
+    rows = []
+    for pair in pairs:
+        row = {"Pair": pair}
+        if represents_map is not None:
+            row["Represents"] = represents_map.get(pair, "Same as Duration Source")
+        row["Duration Source"] = _format_module_combo(duration_module_map[pair])
+        row["Energy Source"] = _format_module_combo(energy_module_map[pair])
+        row["Yield Source (weighted)"] = _format_yield_formula(yield_formula_map[pair])
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
     """Return {pair: (avg eTotal kWh, avg DES CO2 kg)}. Energy per Cycle comes from
@@ -2330,6 +2390,10 @@ with tab4:
     st.caption("Phase durations per pair - edit directly in the table")
 
     PAIRS = ["Group A", "Group B", "Group C"]
+    st.dataframe(
+        module_mapping_table(PAIRS, PAIR_PLANT_MODULE, PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA),
+        use_container_width=True, hide_index=True,
+    )
     adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
 
     # Fallback for any phase/pair the stage log doesn't cover (e.g. Repressurization,
@@ -2444,6 +2508,10 @@ with tab4:
     # differs. See PAIRS_8_4_4 / PAIR_PLANT_MODULE_8_4_4 near the top of the file.
     st.markdown("### 8-4-4 Configuration (Comparison)")
     st.caption("Same scheduling rules as above, applied to an 8-4-4 pairing instead of 6-6-4, for side-by-side comparison.")
+    st.dataframe(
+        module_mapping_table(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4),
+        use_container_width=True, hide_index=True,
+    )
 
     adv_phase_columns_844 = ["Phase"] + [f"{p} (min)" for p in PAIRS_8_4_4]
     stage_defaults_by_pair_844 = load_stage_duration_defaults_by_pair(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
@@ -2542,10 +2610,17 @@ with tab4:
         "3 pairs (16 = 6+5+5), sized for the best achievable Yield: Group A = N1N2N3-M1n3 "
         "(6 modules, the highest real Yield per Cycle available). Group B and Group C (5 modules "
         "each) take their phase durations from N1N2-M1n3 — the closest well-sampled real "
-        "combination in size, keeping cycle timing realistic — but their Yield per Cycle uses "
-        "N3-M2n4's real Yield tripled, the highest boost achievable from any real combination. "
-        "This is a 3-pair configuration, so it uses the original Adsorption-overlap rule: Group A "
+        "combination in size, keeping cycle timing realistic — but their Yield per Cycle instead "
+        "uses weighted sums of N2-M2n4/N3-M2n4 (see the table below). This is a 3-pair "
+        "configuration, so it uses the original Adsorption-overlap rule: Group A "
         "can overlap with Group B/C, but Group B and Group C cannot overlap each other."
+    )
+    st.dataframe(
+        module_mapping_table(
+            PAIRS_6_5_5, PAIR_DURATION_MODULE_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
+            represents_map=REPRESENTS_6_5_5,
+        ),
+        use_container_width=True, hide_index=True,
     )
 
     adv_phase_columns_655 = ["Phase"] + [f"{p} (min)" for p in PAIRS_6_5_5]
@@ -2647,6 +2722,13 @@ with tab4:
         "Because there's no known fan-sharing constraint for a 4th pair, every pair's Adsorption "
         "is allowed to overlap freely with every other pair's here."
     )
+    st.dataframe(
+        module_mapping_table(
+            PAIRS_4GROUP, PAIR_DURATION_MODULE_4GROUP, PAIR_ENERGY_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
+            represents_map=REPRESENTS_4GROUP,
+        ),
+        use_container_width=True, hide_index=True,
+    )
 
     adv_phase_columns_4group = ["Phase"] + [f"{p} (min)" for p in PAIRS_4GROUP]
     stage_defaults_4group = load_stage_duration_defaults_by_pair(PAIRS_4GROUP, PAIR_DURATION_MODULE_4GROUP)
@@ -2738,6 +2820,13 @@ with tab4:
         "N1N2-M1n3's own real average. Yield per Cycle differs: Group A and Group B keep "
         "N1N2-M1n3's own real Yield, while Group C and Group D use N3-M2n4's real Yield "
         "doubled. Adsorption overlap is unrestricted for all 4 pairs."
+    )
+    st.dataframe(
+        module_mapping_table(
+            PAIRS_4X4, PAIR_MODULE_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
+            represents_map=REPRESENTS_4X4,
+        ),
+        use_container_width=True, hide_index=True,
     )
 
     adv_phase_columns_4x4 = ["Phase"] + [f"{p} (min)" for p in PAIRS_4X4]
