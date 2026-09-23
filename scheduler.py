@@ -31,6 +31,17 @@ PAIR_YIELD_FORMULA = {
     "Group C": [("N1N2-M1n3", 1), ("N3-M2n4", 1)],
 }
 
+# The actual physical desorption grouping for 6-6-4 — which of the 16 real
+# Nelion/module-position modules are wired together into each pair. This is a
+# full, non-overlapping partition of all 16 modules, distinct from
+# PAIR_PLANT_MODULE/PAIR_YIELD_FORMULA above (those are only proxy data
+# sources for Duration/Energy/Yield, not a claim about physical composition).
+PAIR_PHYSICAL_MODULES = {
+    "Group A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3", "N3-M1", "N3-M3"],
+    "Group B": ["N1-M2", "N1-M4", "N2-M2", "N2-M4", "N4-M2", "N4-M4"],
+    "Group C": ["N3-M2", "N3-M4", "N4-M1", "N4-M3"],
+}
+
 # Alternative 8-4-4 pairing (vs. the 6-6-4 Group A/B/C above), for side-by-side
 # comparison in Advanced Interleaved. Reuses the "Group A/B/C" pair names (this
 # config's own dedicated tables, distinguished by section header, not by name) -
@@ -51,6 +62,14 @@ PAIR_YIELD_FORMULA_8_4_4 = {
     "Group A": [("N1N2N3-M1n3", 1), ("N3-M2n4", 1)],
     "Group B": [("N1N2-M1n3", 1)],
     "Group C": [("N3-M2n4", 2)],
+}
+
+# The actual physical desorption grouping for 8-4-4 — a full, non-overlapping
+# partition of all 16 modules (see PAIR_PHYSICAL_MODULES above for 6-6-4's).
+PAIR_PHYSICAL_MODULES_8_4_4 = {
+    "Group A": ["N1-M1", "N2-M1", "N3-M1", "N4-M1", "N1-M3", "N2-M3", "N3-M3", "N4-M3"],
+    "Group B": ["N1-M2", "N2-M2", "N1-M4", "N2-M4"],
+    "Group C": ["N3-M2", "N4-M2", "N3-M4", "N4-M4"],
 }
 
 # "4-Group" configuration: 4 pairs built from NON-OVERLAPPING real Module
@@ -99,6 +118,14 @@ PAIR_YIELD_FORMULA_4GROUP = {
 REPRESENTS_4GROUP = {
     "Group D": "N1-M2, N1-M4, N4-M1, N4-M2, N4-M3, N4-M4 (no recorded cycles for any of these)",
 }
+# The actual physical desorption grouping for 4-Group — a full, non-overlapping
+# partition of all 16 modules (matches REPRESENTS_4GROUP's Group D description).
+PAIR_PHYSICAL_MODULES_4GROUP = {
+    "Group A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3", "N3-M1", "N3-M3"],
+    "Group B": ["N3-M2", "N3-M4"],
+    "Group C": ["N2-M2", "N2-M4"],
+    "Group D": ["N1-M2", "N1-M4", "N4-M1", "N4-M2", "N4-M3", "N4-M4"],
+}
 
 # "4-4-4-4" configuration: 4 equal 4-module pairs, one per Nelion-pair x position
 # combination — Group A = N1&N2's M1/M3, Group B = N1&N2's M2/M4, Group C =
@@ -130,18 +157,27 @@ REPRESENTS_4X4 = {
     "Group C": "N3-M1, N3-M3, N4-M1, N4-M3 (not directly recorded)",
     "Group D": "N3-M2, N3-M4, N4-M2, N4-M4 (not directly recorded)",
 }
+# The actual physical desorption grouping for 4-4-4-4 — a full, non-overlapping
+# partition of all 16 modules (matches REPRESENTS_4X4's descriptions above).
+PAIR_PHYSICAL_MODULES_4X4 = {
+    "Group A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3"],
+    "Group B": ["N1-M2", "N1-M4", "N2-M2", "N2-M4"],
+    "Group C": ["N3-M1", "N3-M3", "N4-M1", "N4-M3"],
+    "Group D": ["N3-M2", "N3-M4", "N4-M2", "N4-M4"],
+}
 
 # "6-5-5" configuration: 3 pairs (16 = 6+5+5), chosen for the best achievable
 # Yield. Group A = N1N2N3-M1n3 (6 modules) — the only real combination that
 # matches a 6-module pair exactly, and the highest real Yield per Cycle
-# available (11.43 kg CO2). Group B and Group C ("5 modules" each, though
-# nothing in the data comes in a 5-module unit) both take their phase
-# durations from N1N2-M1n3 — the closest well-sampled real combination in
-# size, so their cycle timing stays realistic rather than borrowing a
-# 2-module combination's much shorter cycle — but their Yield per Cycle
-# instead uses weighted sums of N2-M2n4/N3-M2n4: Group B = N2-M2n4 + N3-M2n4
-# + half of N3-M2n4 (i.e. N3-M2n4 x1.5), Group C = N3-M2n4 x2 + half of
-# N3-M2n4 (i.e. N3-M2n4 x2.5). This is a 3-pair
+# available (11.43 kg CO2). Group B physically = N3-M4 + all of Nelion 4 (5
+# modules), Group C physically = N1&N2's M2/M4 + N3-M2 (5 modules) — see
+# PAIR_PHYSICAL_MODULES_6_5_5. Neither has its own recorded cycles, so both
+# take their phase durations from N1N2-M1n3 — the closest well-sampled real
+# combination in size, so their cycle timing stays realistic rather than
+# borrowing a 2-module combination's much shorter cycle — but their Yield per
+# Cycle instead uses weighted sums of N2-M2n4/N3-M2n4: Group B = N2-M2n4 +
+# N3-M2n4 + half of N3-M2n4 (i.e. N3-M2n4 x1.5), Group C = N3-M2n4 x2 + half
+# of N3-M2n4 (i.e. N3-M2n4 x2.5). This is a 3-pair
 # configuration, so it uses the ORIGINAL Adsorption-overlap rule (Group A can
 # overlap with Group B/C; Group B and Group C cannot overlap each other) —
 # no relaxation needed, unlike the 4-pair configurations above.
@@ -166,8 +202,15 @@ PAIR_YIELD_FORMULA_6_5_5 = {
 # because that's the size needed to reach 16 — no real 5-module combination
 # exists in the data, so their exact module composition is unspecified.
 REPRESENTS_6_5_5 = {
-    "Group B": "5 modules — exact composition unspecified (no real 5-module combination in the data)",
-    "Group C": "5 modules — exact composition unspecified (no real 5-module combination in the data)",
+    "Group B": "N3-M4, N4-M1, N4-M2, N4-M3, N4-M4 (no real 5-module combination in the data)",
+    "Group C": "N1-M2, N1-M4, N2-M2, N2-M4, N3-M2 (no real 5-module combination in the data)",
+}
+# The actual physical desorption grouping for 6-5-5 — a full, non-overlapping
+# partition of all 16 modules (matches REPRESENTS_6_5_5's descriptions above).
+PAIR_PHYSICAL_MODULES_6_5_5 = {
+    "Group A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3", "N3-M1", "N3-M3"],
+    "Group B": ["N3-M4", "N4-M1", "N4-M2", "N4-M3", "N4-M4"],
+    "Group C": ["N1-M2", "N1-M4", "N2-M2", "N2-M4", "N3-M2"],
 }
 
 @st.cache_data
@@ -232,6 +275,20 @@ def module_mapping_table(pairs, duration_module_map, energy_module_map, yield_fo
         row["Yield Source (weighted)"] = _format_yield_formula(yield_formula_map[pair])
         rows.append(row)
     return pd.DataFrame(rows)
+
+def physical_pairing_table(pairs, physical_modules_map):
+    """Per-pair table showing exactly which of the plant's 16 real modules
+    (Nelion 1-4 x M1-M4) are physically grouped together for desorption in
+    this configuration — the actual pairing plan, as opposed to
+    module_mapping_table's CSV data-sourcing proxies."""
+    return pd.DataFrame([
+        {
+            "Pair": pair,
+            "Module Count": len(physical_modules_map[pair]),
+            "Modules": ", ".join(physical_modules_map[pair]),
+        }
+        for pair in pairs
+    ])
 
 def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
     """Return {pair: (avg eTotal kWh, avg DES CO2 kg)}. Energy per Cycle comes from
@@ -2390,6 +2447,12 @@ with tab4:
     st.caption("Phase durations per pair - edit directly in the table")
 
     PAIRS = ["Group A", "Group B", "Group C"]
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+    st.dataframe(physical_pairing_table(PAIRS, PAIR_PHYSICAL_MODULES), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
     st.dataframe(
         module_mapping_table(PAIRS, PAIR_PLANT_MODULE, PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA),
         use_container_width=True, hide_index=True,
@@ -2508,6 +2571,12 @@ with tab4:
     # differs. See PAIRS_8_4_4 / PAIR_PLANT_MODULE_8_4_4 near the top of the file.
     st.markdown("### 8-4-4 Configuration (Comparison)")
     st.caption("Same scheduling rules as above, applied to an 8-4-4 pairing instead of 6-6-4, for side-by-side comparison.")
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+    st.dataframe(physical_pairing_table(PAIRS_8_4_4, PAIR_PHYSICAL_MODULES_8_4_4), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
     st.dataframe(
         module_mapping_table(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4),
         use_container_width=True, hide_index=True,
@@ -2615,6 +2684,12 @@ with tab4:
         "configuration, so it uses the original Adsorption-overlap rule: Group A "
         "can overlap with Group B/C, but Group B and Group C cannot overlap each other."
     )
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+    st.dataframe(physical_pairing_table(PAIRS_6_5_5, PAIR_PHYSICAL_MODULES_6_5_5), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
     st.dataframe(
         module_mapping_table(
             PAIRS_6_5_5, PAIR_DURATION_MODULE_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
@@ -2722,6 +2797,12 @@ with tab4:
         "Because there's no known fan-sharing constraint for a 4th pair, every pair's Adsorption "
         "is allowed to overlap freely with every other pair's here."
     )
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+    st.dataframe(physical_pairing_table(PAIRS_4GROUP, PAIR_PHYSICAL_MODULES_4GROUP), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
     st.dataframe(
         module_mapping_table(
             PAIRS_4GROUP, PAIR_DURATION_MODULE_4GROUP, PAIR_ENERGY_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
@@ -2821,6 +2902,12 @@ with tab4:
         "N1N2-M1n3's own real Yield, while Group C and Group D use N3-M2n4's real Yield "
         "doubled. Adsorption overlap is unrestricted for all 4 pairs."
     )
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+    st.dataframe(physical_pairing_table(PAIRS_4X4, PAIR_PHYSICAL_MODULES_4X4), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
     st.dataframe(
         module_mapping_table(
             PAIRS_4X4, PAIR_MODULE_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
