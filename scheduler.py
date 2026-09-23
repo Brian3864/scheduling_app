@@ -455,10 +455,10 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Schedule 2–32 modules (Group A + B) with shared resource limits
-- Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2)
-- Baseline analysis: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
-- Gantt charts, cycle counts, and phase breakdown (total minutes per phase)
+- Two configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable) and a smaller **4-4** setup (an 8-module plant, Group A + B of 4 modules each, defaulting to N1N2-M1n3's real Duration/Energy and N3-M2n4's real Yield doubled)
+- Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
+- Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
+- Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
 
 **Tab 4: Advanced Interleaved**
 
@@ -474,7 +474,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across seven processes: Concurrent, Interleaved, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-Group, 4-4-4-4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across nine processes: Concurrent, Interleaved, Concurrent (4-4), Interleaved (4-4) from Full Schedule Analysis's two configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-Group, 4-4-4-4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -1285,6 +1285,8 @@ with tab3:
 
     # === Input Configuration ===
     st.subheader("Inputs")
+    st.markdown("### 8-8 Configuration")
+    st.caption("The main analysis: a 16-module plant split into two 8-module pairs.")
     in_col1, in_col2 = st.columns(2)
     with in_col1:
         total_modules = st.number_input("Total Modules", 2, 32, 16, step=2)
@@ -1419,13 +1421,128 @@ with tab3:
         "Cooling": shared_evac_cooling_cap,
     }
 
+    # === "4-4" Configuration: a second, separate analysis ===
+    # An 8-module plant split into two 4-module pairs (vs. the 16-module 8-8 split
+    # above), run through the same Concurrent/Interleaved engine for side-by-side
+    # comparison. Phase durations AND Energy per Cycle both come from N1N2-M1n3's
+    # own real average (an actual 4-module combination, unlike the 8-8 config's
+    # proxies); Yield per Cycle instead uses N3-M2n4's real Yield DOUBLED, for
+    # both pairs. Shares the Operating Period and Evacuation/Cooling behavior
+    # checkboxes with the 8-8 config above, since those are plant-wide settings.
+    st.markdown("### 4-4 Configuration")
+    st.caption(
+        "A second, smaller full-schedule analysis: an 8-module plant split into two "
+        "4-module pairs, run through the same Concurrent/Interleaved engine for "
+        "side-by-side comparison. Phase durations and Energy per Cycle both come "
+        "from N1N2-M1n3's own real average (an actual 4-module combination); Yield "
+        "per Cycle instead uses N3-M2n4's real Yield DOUBLED, for both pairs."
+    )
+    TAB3_44_TOTAL_MODULES = 8
+    MODULES_44 = list(range(1, TAB3_44_TOTAL_MODULES + 1))
+    GROUP_OF_44 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_44}
+    TAB3_44_MODULE_MAP = {"A": "N1N2-M1n3", "B": "N1N2-M1n3"}
+    TAB3_44_YIELD_FORMULA = {"A": [("N3-M2n4", 2)], "B": [("N3-M2n4", 2)]}
+
+    cap44_col1, cap44_col2 = st.columns(2)
+    with cap44_col1:
+        adsorption_capacity_44 = st.number_input(
+            "Adsorption capacity (4-4)", 1, TAB3_44_TOTAL_MODULES, 4,
+            help="Max modules in Adsorption at once.", key="adsorption_capacity_44",
+        )
+    with cap44_col2:
+        concurrent_desorption_cap_44 = st.number_input(
+            "Concurrent: Max modules in desorption (4-4)", 1, TAB3_44_TOTAL_MODULES, 4,
+            help="Max modules in desorption phases + Cooling at the same time.", key="concurrent_desorption_cap_44",
+        )
+        shared_evac_cooling_cap_44 = st.number_input(
+            "Max modules: Evacuation / Cooling (4-4, Interleaved)", 1, TAB3_44_TOTAL_MODULES, 4,
+            help="One shared resource for both phases. Max modules in Evacuation or Cooling combined at once.",
+            key="shared_evac_cooling_cap_44",
+        )
+        shared_purge_heat_co2_cap_44 = st.number_input(
+            "Max modules: NCG + Heating + CO2 (4-4, Interleaved)", 1, TAB3_44_TOTAL_MODULES, 4,
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once.",
+            key="shared_purge_heat_co2_cap_44",
+        )
+
+    default_phase_durations_44 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_44_MODULE_MAP)
+    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N1N2-M1n3 cycle average.")
+    PHASE_DURATIONS_TAB3_44_VERSION = 1
+    get_versioned_default_table(
+        "phase_durations_tab3_44", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_44_VERSION,
+        lambda: pd.DataFrame({
+            "Phase": PHASES,
+            "Group A (min)": [default_phase_durations_44.get("A", {}).get(phase, CORE_PHASE_FALLBACK_DURATIONS[phase]) for phase in PHASES],
+            "Group B (min)": [default_phase_durations_44.get("B", {}).get(phase, CORE_PHASE_FALLBACK_DURATIONS[phase]) for phase in PHASES],
+        }),
+    )
+    phase_edited_44 = st.data_editor(
+        st.session_state.phase_durations_tab3_44,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+        },
+        key="phase_durations_editor_tab3_44",
+    )
+    st.session_state.phase_durations_tab3_44 = phase_edited_44
+    grp_a_44 = {phase: int(phase_edited_44.loc[phase_edited_44["Phase"] == phase, "Group A (min)"].iloc[0]) for phase in PHASES}
+    grp_b_44 = {phase: int(phase_edited_44.loc[phase_edited_44["Phase"] == phase, "Group B (min)"].iloc[0]) for phase in PHASES}
+    PHASE_DURATIONS_44 = grp_a_44
+    PHASE_DURATIONS_BY_GROUP_44 = {"A": grp_a_44, "B": grp_b_44}
+
+    default_energy_yield_44 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA)
+    st.caption(
+        f"Energy per Cycle uses N1N2-M1n3's own real average; Yield per Cycle uses N3-M2n4's real "
+        f"Yield doubled: {default_energy_yield_44}. Edit per pair if a pair's real output differs."
+    )
+    ENERGY_YIELD_TAB3_44_VERSION = 1
+    get_versioned_default_table(
+        "energy_yield_tab3_44", ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"], ENERGY_YIELD_TAB3_44_VERSION,
+        lambda: pd.DataFrame({
+            "Pair": ["Group A", "Group B"],
+            "Energy per Cycle (kWh)": [default_energy_yield_44["A"][0], default_energy_yield_44["B"][0]],
+            "Yield per Cycle (kg CO2)": [default_energy_yield_44["A"][1], default_energy_yield_44["B"][1]],
+        }),
+    )
+    energy_yield_tab3_44 = st.data_editor(
+        st.session_state.energy_yield_tab3_44,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pair": st.column_config.TextColumn("Pair", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_tab3_44",
+    )
+    st.session_state.energy_yield_tab3_44 = energy_yield_tab3_44
+    PAIR_ENERGY_PER_CYCLE_TAB3_44 = {
+        gid: float(energy_yield_tab3_44.loc[energy_yield_tab3_44["Pair"] == f"Group {gid}", "Energy per Cycle (kWh)"].iloc[0])
+        for gid in ["A", "B"]
+    }
+    PAIR_YIELD_PER_CYCLE_TAB3_44 = {
+        gid: float(energy_yield_tab3_44.loc[energy_yield_tab3_44["Pair"] == f"Group {gid}", "Yield per Cycle (kg CO2)"].iloc[0])
+        for gid in ["A", "B"]
+    }
+    RESOURCE_LIMITS_44 = {
+        "Adsorption": min(int(adsorption_capacity_44), TAB3_44_TOTAL_MODULES),
+        "Evacuation": shared_evac_cooling_cap_44,
+        "NCG Purging": shared_purge_heat_co2_cap_44,
+        "Heating": shared_purge_heat_co2_cap_44,
+        "CO2 Purging": shared_purge_heat_co2_cap_44,
+        "Cooling": shared_evac_cooling_cap_44,
+    }
+
     selected_delay = 0 # Default value, will be updated based on user choice
 
-    def build_module_delays(offset, group_ids, group_of):
+    def build_module_delays(offset, group_ids, group_of, modules):
         """Stagger each group's start time by `offset` minutes (Group A starts at 0,
         Group B at 1x offset, etc.) so their phases interleave instead of colliding."""
         group_index = {g: i for i, g in enumerate(group_ids)}
-        return {m: group_index[group_of[m]] * offset for m in MODULES}
+        return {m: group_index[group_of[m]] * offset for m in modules}
 
 
 
@@ -1570,7 +1687,13 @@ with tab3:
                             # phase-duration table) and retry from there.
                             this_group = group_of[mod]
                             other_group = "B" if this_group == "A" else "A"
-                            pause_minutes = int(PHASE_DURATIONS_BY_GROUP[other_group]["Evacuation"])
+                            # Use this call's own phase_durations_by_group (not the module-level
+                            # PHASE_DURATIONS_BY_GROUP), so a second configuration with different
+                            # durations doesn't silently borrow the first configuration's Evacuation time.
+                            pause_minutes = int(
+                                phase_durations_by_group[other_group]["Evacuation"] if phase_durations_by_group
+                                else phase_durations_config["Evacuation"]
+                            )
 
                             if not conflict_hit:
                                 evac_cool_stats["cooling_delay_events"] += 1
@@ -1714,7 +1837,18 @@ with tab3:
     # --- Main Run Button ---
     st.subheader("Results")
     st.markdown("---")
-    if st.button("Generate Schedule and Analyze"):
+    def run_and_display_config(
+        title, key_suffix, comparison_suffix,
+        MODULES, GROUP_IDS, GROUP_OF,
+        PHASE_DURATIONS, PHASE_DURATIONS_BY_GROUP, RESOURCE_LIMITS,
+        PAIR_ENERGY_PER_CYCLE, PAIR_YIELD_PER_CYCLE,
+        concurrent_desorption_cap, shared_evac_cooling_cap, shared_purge_heat_co2_cap,
+    ):
+        """Runs the optimizer + both simulations for one Full Schedule Analysis
+        configuration (its own module count/grouping/durations/rates/capacities)
+        and renders its full results section. Called once per configuration so
+        the 8-8 and 4-4 setups can be compared side by side from one button."""
+        st.markdown(f"## {title}")
         final_delay_to_use = 0
         optimization_summary_df = None
 
@@ -1754,12 +1888,12 @@ with tab3:
                 status_text = st.empty()
 
                 for i, delay in enumerate(delay_search_range):
-                    current_module_delays_for_opt = build_module_delays(delay, group_ids, group_of)
+                    current_module_delays_for_opt = build_module_delays(delay, group_ids, group_of, MODULES)
                     schedule_int, _, _ = run_simulation(
-                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
                     )
                     schedule_conc, _, _ = run_simulation(
-                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
                     )
                     cycles_int = int(count_complete_cycles_df(schedule_int)["Complete Cycles"].sum())
                     cycles_conc = int(count_complete_cycles_df(schedule_conc)["Complete Cycles"].sum())
@@ -1776,7 +1910,7 @@ with tab3:
             st.success("Optimization Complete!")
             st.write(f"**Optimal Group Offset: {best_delay} minutes** (optimized for Interleaved)")
             final_delay_to_use = best_delay
-        
+
         else:
             # Manual: set MANUAL_DELAY in code
             MANUAL_DELAY = 62
@@ -1784,13 +1918,13 @@ with tab3:
 
         # --- Run both simulations with the determined delay ---
         st.markdown("---")
-        actual_module_delays = build_module_delays(final_delay_to_use, GROUP_IDS, GROUP_OF)
-        
+        actual_module_delays = build_module_delays(final_delay_to_use, GROUP_IDS, GROUP_OF, MODULES)
+
         schedule_int, resource_usage_int, conflicts_int = run_simulation(
-            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
         )
         schedule_conc, resource_usage_conc, _ = run_simulation(
-            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap
+            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
         )
 
         cycle_counts_int = count_complete_cycles_df(schedule_int)
@@ -1869,15 +2003,15 @@ with tab3:
 
         def pair_yield_energy(pair_totals_df):
             """Multiply each pair's Total Cycles by the per-cycle Energy/Yield rate
-            entered for that pair (PAIR_*_PER_CYCLE_TAB3) to get plant output totals,
-            plus a derived kg CO2 per kWh efficiency figure."""
+            entered for that pair to get plant output totals, plus a derived kg CO2
+            per kWh efficiency figure."""
             df = pair_totals_df.copy()
             gids = df["Pair"].str.replace("Group ", "", regex=False)
             df["Total Yield (kg CO2)"] = [
-                round(cycles * PAIR_YIELD_PER_CYCLE_TAB3[gid], 1) for cycles, gid in zip(df["Total Cycles"], gids)
+                round(cycles * PAIR_YIELD_PER_CYCLE[gid], 1) for cycles, gid in zip(df["Total Cycles"], gids)
             ]
             df["Total Energy (kWh)"] = [
-                round(cycles * PAIR_ENERGY_PER_CYCLE_TAB3[gid], 1) for cycles, gid in zip(df["Total Cycles"], gids)
+                round(cycles * PAIR_ENERGY_PER_CYCLE[gid], 1) for cycles, gid in zip(df["Total Cycles"], gids)
             ]
             df["kg CO2 per kWh"] = [
                 round(y / e, 3) if e > 0 else "—"
@@ -1893,16 +2027,16 @@ with tab3:
         # tab. Only refreshes when this "Generate" button is (re)clicked, not on
         # every app interaction — see that tab's caption for why. Uses the
         # pair-merged "Total Cycles" (same figure shown in the pair cycle-count
-        # table above), NOT cycles_conc/cycles_int — those sum each of the 8
-        # modules' own cycle counts per pair and overcount for the same reason
-        # fixed earlier in "Cycle count per pair".
+        # table above), NOT cycles_conc/cycles_int — those sum each module's own
+        # cycle counts per pair and overcount for the same reason fixed earlier
+        # in "Cycle count per pair".
         st.session_state.setdefault("process_comparison", {})
-        st.session_state["process_comparison"]["Concurrent"] = {
+        st.session_state["process_comparison"][f"Concurrent{comparison_suffix}"] = {
             "Total Cycles": int(yield_energy_conc["Total Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_conc["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_conc["Total Energy (kWh)"].sum()),
         }
-        st.session_state["process_comparison"]["Interleaved"] = {
+        st.session_state["process_comparison"][f"Interleaved{comparison_suffix}"] = {
             "Total Cycles": int(yield_energy_int["Total Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_int["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_int["Total Energy (kWh)"].sum()),
@@ -2108,6 +2242,7 @@ with tab3:
             st.success("No Evacuation/Cooling conflicts — schedule ran without delays.")
 
         # Diagnostic: Adsorption durations by module
+        groups_equal = PHASE_DURATIONS_BY_GROUP[GROUP_IDS[0]] == PHASE_DURATIONS_BY_GROUP[GROUP_IDS[1]]
         ads_df = schedule_int[schedule_int["Phase"] == "Adsorption"].copy()
         if len(ads_df) > 0:
             ads_df["Duration"] = ads_df["End"] - ads_df["Start"]
@@ -2119,7 +2254,7 @@ with tab3:
                     st.caption("Interleaved")
                     st.dataframe(ads_summary, use_container_width=True, hide_index=True)
                     deviants_int = ads_summary[(ads_summary["min"] != expected) | (ads_summary["max"] != expected)]
-                    if len(deviants_int) > 0 and grp_a == grp_b:
+                    if len(deviants_int) > 0 and groups_equal:
                         st.warning(f"Modules {list(deviants_int.index)} have Adsorption ≠ {expected} min")
                 with diag_col2:
                     st.caption("Concurrent")
@@ -2129,11 +2264,11 @@ with tab3:
                         ads_conc_summary = ads_conc.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
                         st.dataframe(ads_conc_summary, use_container_width=True, hide_index=True)
                         deviants_conc = ads_conc_summary[(ads_conc_summary["min"] != expected) | (ads_conc_summary["max"] != expected)]
-                        if len(deviants_conc) > 0 and grp_a == grp_b:
+                        if len(deviants_conc) > 0 and groups_equal:
                             st.warning(f"Modules {list(deviants_conc.index)} have Adsorption ≠ {expected} min")
                 st.caption("All modules should show the same min/max when 'Different phase durations per group' is off.")
-                st.download_button("Download Concurrent schedule (CSV)", schedule_conc.to_csv(index=False), file_name="schedule_concurrent.csv", mime="text/csv", key="dl_schedule_conc")
-                st.download_button("Download Interleaved schedule (CSV)", schedule_int.to_csv(index=False), file_name="schedule_interleaved.csv", mime="text/csv", key="dl_schedule_int")
+                st.download_button("Download Concurrent schedule (CSV)", schedule_conc.to_csv(index=False), file_name=f"schedule_concurrent{key_suffix}.csv", mime="text/csv", key=f"dl_schedule_conc{key_suffix}")
+                st.download_button("Download Interleaved schedule (CSV)", schedule_int.to_csv(index=False), file_name=f"schedule_interleaved{key_suffix}.csv", mime="text/csv", key=f"dl_schedule_int{key_suffix}")
 
         # === Module Utilisation & Idle Time ===
         def compute_module_metrics(schedule_df):
@@ -2256,6 +2391,23 @@ with tab3:
             plt.tight_layout()
             st.pyplot(fig_phase2)
             plt.close(fig_phase2)
+
+    if st.button("Generate Schedule and Analyze"):
+        run_and_display_config(
+            "8-8 Configuration", "_88", "",
+            MODULES, GROUP_IDS, GROUP_OF,
+            PHASE_DURATIONS, PHASE_DURATIONS_BY_GROUP, RESOURCE_LIMITS,
+            PAIR_ENERGY_PER_CYCLE_TAB3, PAIR_YIELD_PER_CYCLE_TAB3,
+            concurrent_desorption_cap, shared_evac_cooling_cap, shared_purge_heat_co2_cap,
+        )
+        st.markdown("---")
+        run_and_display_config(
+            "4-4 Configuration", "_44", " (4-4)",
+            MODULES_44, GROUP_IDS, GROUP_OF_44,
+            PHASE_DURATIONS_44, PHASE_DURATIONS_BY_GROUP_44, RESOURCE_LIMITS_44,
+            PAIR_ENERGY_PER_CYCLE_TAB3_44, PAIR_YIELD_PER_CYCLE_TAB3_44,
+            concurrent_desorption_cap_44, shared_evac_cooling_cap_44, shared_purge_heat_co2_cap_44,
+        )
 
 with tab2:
     # "M2&M4 + LRVP": fixed two-module (M2, M4) full 6-phase cycle, used to visualize
@@ -3516,7 +3668,7 @@ with tab5:
     )
 
     PROCESS_ORDER = [
-        "Concurrent", "Interleaved",
+        "Concurrent", "Interleaved", "Concurrent (4-4)", "Interleaved (4-4)",
         "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)",
         "Advanced Interleaved (6-5-5)",
         "Advanced Interleaved (4-Group)", "Advanced Interleaved (4-4-4-4)",
@@ -3524,6 +3676,8 @@ with tab5:
     PROCESS_COLORS = {
         "Concurrent": "#6C5CE7",
         "Interleaved": "#E07C5E",
+        "Concurrent (4-4)": "#8E7CF7",
+        "Interleaved (4-4)": "#F0A382",
         "Advanced Interleaved (6-6-4)": "#2ECC71",
         "Advanced Interleaved (8-4-4)": "#F39C12",
         "Advanced Interleaved (6-5-5)": "#D35400",
