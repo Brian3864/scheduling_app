@@ -276,19 +276,27 @@ def module_mapping_table(pairs, duration_module_map, energy_module_map, yield_fo
         rows.append(row)
     return pd.DataFrame(rows)
 
+PAIR_CIRCLE_COLORS = ["🟡", "🔴", "🟢", "🔵", "🟣", "🟠"]
+
 def physical_pairing_table(pairs, physical_modules_map):
-    """Per-pair table showing exactly which of the plant's 16 real modules
-    (Nelion 1-4 x M1-M4) are physically grouped together for desorption in
-    this configuration — the actual pairing plan, as opposed to
-    module_mapping_table's CSV data-sourcing proxies."""
-    return pd.DataFrame([
-        {
-            "Pair": pair,
-            "Module Count": len(physical_modules_map[pair]),
-            "Modules": ", ".join(physical_modules_map[pair]),
-        }
-        for pair in pairs
-    ])
+    """Position (M1-M4) x Nelion (1-4) grid — a colored-circle visual of the
+    plant's real module grid, showing which pair each of the 16 modules is
+    physically grouped into for desorption in this configuration. Visually
+    distinct from module_mapping_table (the CSV data-sourcing table)."""
+    pair_colors = {pair: PAIR_CIRCLE_COLORS[i % len(PAIR_CIRCLE_COLORS)] for i, pair in enumerate(pairs)}
+    module_to_pair = {
+        module: pair
+        for pair, modules in physical_modules_map.items()
+        for module in modules
+    }
+    rows = []
+    for position in ["M1", "M2", "M3", "M4"]:
+        row = {"Position": position}
+        for nelion in range(1, 5):
+            pair = module_to_pair.get(f"N{nelion}-{position}")
+            row[f"Nelion {nelion}"] = f"{pair_colors[pair]} {pair}" if pair else "—"
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
     """Return {pair: (avg eTotal kWh, avg DES CO2 kg)}. Energy per Cycle comes from
