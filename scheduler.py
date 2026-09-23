@@ -53,36 +53,11 @@ PAIR_YIELD_FORMULA_8_4_4 = {
     "Group C": [("N3-M2n4", 2)],
 }
 
-# "Best-Yield (Reshuffled)" configuration: 3 pairs built from NON-OVERLAPPING
-# real Module combinations, so their Yields can be safely added together without
-# double-counting any physical module. Checked against the Nelion x M1-M4 grid:
-#   N1N2N3-M1n3 = {N1,N2,N3}'s M1 & M3            -> 6 modules
-#   N3-M2n4     = N3's M2 & M4                     -> 2 modules
-#   N2-M2n4     = N2's M2 & M4                     -> 2 modules
-# These three don't share a single physical module (M1n3 and M2n4 are disjoint
-# positions), unlike N1N2-M1n3, which is a SUBSET of N1N2N3-M1n3 ({N1,N2}'s M1 &
-# M3) and was wrongly summed alongside it in an earlier version of this
-# configuration. Together these cover 10 of the 16 modules; the remaining 6
-# (N1's M2 & M4, and all of N4) have no recorded cycles in either CSV at all, so
-# there's no real data to represent them with — this reshuffle can't claim full
-# 16-module coverage, only what's actually been observed.
-PAIRS_RESHUFFLED = ["Group A", "Group B", "Group C"]
-PAIR_MODULE_RESHUFFLED = {
-    "Group A": "N1N2N3-M1n3",
-    "Group B": "N3-M2n4",
-    "Group C": "N2-M2n4",
-}
-
-# Each pair's Yield per Cycle is now its own single real average (no summing) —
-# since the pairs are non-overlapping, adding their totals together later is
-# already a valid combination; summing multiple combinations INTO one pair's
-# rate (as the previous version did) is what caused the double-counting.
-PAIR_YIELD_FORMULA_RESHUFFLED = {
-    pair: [(module, 1)] for pair, module in PAIR_MODULE_RESHUFFLED.items()
-}
-
-# "4-Group" configuration: extends the reshuffle above with a 4th pair (Group D)
-# to cover the full 16 modules. Group D represents 6 modules that have ZERO
+# "4-Group" configuration: 4 pairs built from NON-OVERLAPPING real Module
+# combinations (Group A = N1N2N3-M1n3, Group B = N3-M2n4, Group C = N2-M2n4),
+# so their Yields can be safely added together without double-counting any
+# physical module, plus a 4th pair (Group D) to cover the full 16 modules.
+# Group D represents 6 modules that have ZERO
 # recorded cycles in either CSV — Nelion 1's M2 & M4, and all of Nelion 4 (M1,
 # M2, M3, M4). Its Energy/Yield per Cycle is N3-M2n4's rate TRIPLED — three
 # independent N3-M2n4-like 2-module units combined into one pair, the same "xN"
@@ -367,12 +342,12 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
 - Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
-- Six configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings, 3 pairs each), Best-Yield (3 non-overlapping real Module combinations, covering 10 of 16 modules), 4-Group (adds a 4th pair extrapolating Nelion 1's M2/M4 and all of Nelion 4 from Nelion 3's real data, covering all 16 modules), 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but N3-M2n4 tripled for Yield) — every configuration with more than 3 pairs allows every pair's Adsorption to overlap freely, since the original 3-pair overlap rule doesn't generalize without an unverified assumption; 6-5-5 keeps the original 3-pair overlap rule since it has exactly 3 pairs
+- Five configurations are compared side by side: 6-6-4 and 8-4-4 (different module-to-pair groupings, 3 pairs each), 4-Group (3 non-overlapping real Module combinations plus a 4th pair extrapolating Nelion 1's M2/M4 and all of Nelion 4 from Nelion 3's real data, covering all 16 modules), 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield) — every configuration with more than 3 pairs allows every pair's Adsorption to overlap freely, since the original 3-pair overlap rule doesn't generalize without an unverified assumption; 6-5-5 keeps the original 3-pair overlap rule since it has exactly 3 pairs
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across eight processes: Concurrent, Interleaved, and all six Advanced Interleaved configurations (6-6-4, 8-4-4, Best-Yield, 4-Group, 4-4-4-4, and 6-5-5). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across seven processes: Concurrent, Interleaved, and all five Advanced Interleaved configurations (6-6-4, 8-4-4, 4-Group, 4-4-4-4, and 6-5-5). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -2553,101 +2528,11 @@ with tab4:
         for pair in PAIRS_8_4_4
     }
 
-    # === "Best-Yield (Reshuffled)" configuration ===
-    st.markdown("### Best-Yield Configuration (Reshuffled)")
-    st.caption(
-        "3 pairs built from NON-OVERLAPPING real Module combinations, so it's valid to add their "
-        "outputs together: Group A = N1N2N3-M1n3 (6 modules: N1/N2/N3's M1 & M3), Group B = "
-        "N3-M2n4 (2 modules: N3's M2 & M4), Group C = N2-M2n4 (2 modules: N2's M2 & M4). Each "
-        "pair's phase durations AND Yield/Energy per Cycle all come from that one combination's "
-        "own real average — no summing within a pair. This covers 10 of the 16 modules; N1's M2 "
-        "& M4 and all of N4 have no recorded cycles in either CSV, so they aren't represented. "
-        "See PAIR_MODULE_RESHUFFLED near the top of the file."
-    )
-
-    adv_phase_columns_reshuffled = ["Phase"] + [f"{p} (min)" for p in PAIRS_RESHUFFLED]
-    stage_defaults_reshuffled = load_stage_duration_defaults_by_pair(PAIRS_RESHUFFLED, PAIR_MODULE_RESHUFFLED)
-    ADV_PHASE_DURATIONS_RESHUFFLED_VERSION = 3
-
-    def _pair_phase_durations_reshuffled(pair):
-        pair_defaults = stage_defaults_reshuffled.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
-
-    get_versioned_default_table(
-        "adv_phase_durations_reshuffled", adv_phase_columns_reshuffled, ADV_PHASE_DURATIONS_RESHUFFLED_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations_reshuffled("Group A"),
-            "Group B (min)": _pair_phase_durations_reshuffled("Group B"),
-            "Group C (min)": _pair_phase_durations_reshuffled("Group C"),
-        }),
-    )
-    adv_phase_table_reshuffled = st.data_editor(
-        st.session_state.adv_phase_durations_reshuffled,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor_reshuffled",
-    )
-    st.session_state.adv_phase_durations_reshuffled = adv_phase_table_reshuffled
-
-    PHASE_DURATIONS_BY_PAIR_RESHUFFLED = {
-        pair: {
-            phase: int(
-                adv_phase_table_reshuffled.loc[
-                    adv_phase_table_reshuffled["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
-        }
-        for pair in PAIRS_RESHUFFLED
-    }
-
-    pair_plant_defaults_reshuffled = load_plant_cycle_defaults_weighted(
-        PAIRS_RESHUFFLED, PAIR_MODULE_RESHUFFLED, PAIR_YIELD_FORMULA_RESHUFFLED,
-    )
-    ENERGY_YIELD_RESHUFFLED_VERSION = 3
-    energy_yield_reshuffled_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4_reshuffled", energy_yield_reshuffled_cols, ENERGY_YIELD_RESHUFFLED_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS_RESHUFFLED,
-            "Energy per Cycle (kWh)": [pair_plant_defaults_reshuffled[p][0] for p in PAIRS_RESHUFFLED],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults_reshuffled[p][1] for p in PAIRS_RESHUFFLED],
-        }),
-    )
-    energy_yield_table_reshuffled = st.data_editor(
-        st.session_state.energy_yield_tab4_reshuffled,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_reshuffled",
-    )
-    st.session_state.energy_yield_tab4_reshuffled = energy_yield_table_reshuffled
-
-    PAIR_ENERGY_PER_CYCLE_RESHUFFLED = {
-        pair: float(energy_yield_table_reshuffled.loc[energy_yield_table_reshuffled["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS_RESHUFFLED
-    }
-    PAIR_YIELD_PER_CYCLE_RESHUFFLED = {
-        pair: float(energy_yield_table_reshuffled.loc[energy_yield_table_reshuffled["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS_RESHUFFLED
-    }
-
     # === "4-Group" configuration ===
     st.markdown("### 4-Group Configuration (Adsorption Overlap Allowed)")
     st.caption(
-        "Adds a 4th pair, Group D, to the reshuffle above: Group A = N1N2N3-M1n3 (6 modules), "
+        "3 pairs built from NON-OVERLAPPING real Module combinations, plus a 4th pair, Group D, "
+        "to cover the full 16 modules: Group A = N1N2N3-M1n3 (6 modules), "
         "Group B = N3-M2n4 (2), Group C = N2-M2n4 (2), Group D = 6 modules (N1's M2 & M4, plus "
         "all of Nelion 4), since none of those have any recorded cycles in either CSV. Group D's "
         "Energy per Cycle and Yield per Cycle (tripled) are extrapolated from N3-M2n4's real data, "
@@ -3196,10 +3081,9 @@ with tab4:
             })
         return pd.DataFrame(rows)
 
-    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, Best-Yield, 4-Group, 4-4-4-4 & 6-5-5)", key="adv_generate"):
+    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, 4-Group, 4-4-4-4 & 6-5-5)", key="adv_generate"):
         adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
-        adv_schedule_reshuffled = run_advanced_interleaved(PAIRS_RESHUFFLED, PHASE_DURATIONS_BY_PAIR_RESHUFFLED, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_4group = run_advanced_interleaved(
             PAIRS_4GROUP, PHASE_DURATIONS_BY_PAIR_4GROUP, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
             free_adsorption_overlap=True,
@@ -3266,35 +3150,6 @@ with tab4:
             "Total Cycles": int(yield_energy_df_844["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df_844["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df_844["Total Energy (kWh)"].sum()),
-        }
-
-        st.markdown("## Best-Yield Configuration (Reshuffled)")
-        st.markdown("### Complete Cycles")
-
-        yield_energy_df_reshuffled = _complete_cycles_and_yield_energy(
-            adv_schedule_reshuffled, PAIRS_RESHUFFLED, PAIR_YIELD_PER_CYCLE_RESHUFFLED, PAIR_ENERGY_PER_CYCLE_RESHUFFLED
-        )
-        st.dataframe(yield_energy_df_reshuffled[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
-        st.dataframe(yield_energy_df_reshuffled, use_container_width=True, hide_index=True)
-
-        ye_metric_col1_reshuffled, ye_metric_col2_reshuffled = st.columns(2)
-        with ye_metric_col1_reshuffled:
-            st.metric("Plant Total Yield", f"{yield_energy_df_reshuffled['Total Yield (kg CO2)'].sum():.1f} kg CO2")
-        with ye_metric_col2_reshuffled:
-            st.metric("Plant Total Energy", f"{yield_energy_df_reshuffled['Total Energy (kWh)'].sum():.1f} kWh")
-
-        st.markdown("### Pair Utilisation & Idle Time")
-        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule_reshuffled, PAIRS_RESHUFFLED, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
-
-        # Publish Best-Yield totals too, alongside 6-6-4 and 8-4-4 above.
-        st.session_state["process_comparison"]["Advanced Interleaved (Best-Yield)"] = {
-            "Total Cycles": int(yield_energy_df_reshuffled["Complete Cycles"].sum()),
-            "Total Yield (kg CO2)": float(yield_energy_df_reshuffled["Total Yield (kg CO2)"].sum()),
-            "Total Energy (kWh)": float(yield_energy_df_reshuffled["Total Energy (kWh)"].sum()),
         }
 
         st.markdown("## 4-Group Configuration")
@@ -3426,11 +3281,6 @@ with tab4:
         with st.expander("Schedule Data (8-4-4 Configuration)"):
             st.dataframe(adv_schedule_844, use_container_width=True, hide_index=True)
 
-        st.markdown("### Advanced Interleaved Gantt Chart (Best-Yield Configuration)")
-        _draw_advanced_gantt(adv_schedule_reshuffled, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - Best-Yield Configuration")
-        with st.expander("Schedule Data (Best-Yield Configuration)"):
-            st.dataframe(adv_schedule_reshuffled, use_container_width=True, hide_index=True)
-
         st.markdown("### Advanced Interleaved Gantt Chart (4-Group Configuration)")
         _draw_advanced_gantt(adv_schedule_4group, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 4-Group Configuration")
         with st.expander("Schedule Data (4-Group Configuration)"):
@@ -3463,7 +3313,7 @@ with tab5:
     PROCESS_ORDER = [
         "Concurrent", "Interleaved",
         "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)",
-        "Advanced Interleaved (Best-Yield)", "Advanced Interleaved (4-Group)",
+        "Advanced Interleaved (4-Group)",
         "Advanced Interleaved (4-4-4-4)", "Advanced Interleaved (6-5-5)",
     ]
     PROCESS_COLORS = {
@@ -3471,7 +3321,6 @@ with tab5:
         "Interleaved": "#E07C5E",
         "Advanced Interleaved (6-6-4)": "#2ECC71",
         "Advanced Interleaved (8-4-4)": "#F39C12",
-        "Advanced Interleaved (Best-Yield)": "#E74C3C",
         "Advanced Interleaved (4-Group)": "#9B59B6",
         "Advanced Interleaved (4-4-4-4)": "#1ABC9C",
         "Advanced Interleaved (6-5-5)": "#D35400",
