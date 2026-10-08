@@ -3892,6 +3892,22 @@ with tab4:
             })
         return pd.DataFrame(rows)
 
+    def _draw_idle_chart(utilization_df, title):
+        """Bar chart of each pair's Idle (min) — the empty stretches where that
+        pair is scheduled in no phase at all (neither Adsorption nor any step of
+        the Desorption chain, Cooling, or Repressurization)."""
+        fig, ax = plt.subplots(figsize=(8, 3.5))
+        bars = ax.bar(utilization_df["Pair"], utilization_df["Idle (min)"], color="#9AA5B1", edgecolor="black", alpha=0.85)
+        for bar in bars:
+            h = bar.get_height()
+            ax.annotate(f"{int(h)}", xy=(bar.get_x() + bar.get_width() / 2, h), ha="center", va="bottom", fontsize=8)
+        ax.set_xlabel("Pair")
+        ax.set_ylabel("Idle (minutes)")
+        ax.set_title(title)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
     if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, 6-5-5, 4-Group, 4-4-4-4 & 2-2-2-2 N3/N4)", key="adv_generate"):
         adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
@@ -3930,7 +3946,9 @@ with tab4:
 
         st.markdown("### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule, PAIRS, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+        util_df = _pair_utilization(adv_schedule, PAIRS, TOTAL_MINUTES_ADV)
+        st.dataframe(util_df, use_container_width=True, hide_index=True)
+        _draw_idle_chart(util_df, "Idle Time per Pair — 6-6-4 Configuration")
 
         # Publish totals for the Yield vs Cycles comparison tab. Only refreshes when
         # this "Generate" button is (re)clicked — see that tab's caption for why.
@@ -3961,7 +3979,9 @@ with tab4:
 
         st.markdown("### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule_844, PAIRS_8_4_4, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+        util_df_844 = _pair_utilization(adv_schedule_844, PAIRS_8_4_4, TOTAL_MINUTES_ADV)
+        st.dataframe(util_df_844, use_container_width=True, hide_index=True)
+        _draw_idle_chart(util_df_844, "Idle Time per Pair — 8-4-4 Configuration")
 
         # Publish 8-4-4 totals too, alongside the 6-6-4 entry above.
         st.session_state["process_comparison"]["Advanced Interleaved (8-4-4)"] = {
@@ -3990,7 +4010,9 @@ with tab4:
 
         st.markdown("### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule_655, PAIRS_6_5_5, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+        util_df_655 = _pair_utilization(adv_schedule_655, PAIRS_6_5_5, TOTAL_MINUTES_ADV)
+        st.dataframe(util_df_655, use_container_width=True, hide_index=True)
+        _draw_idle_chart(util_df_655, "Idle Time per Pair — 6-5-5 Configuration")
 
         st.session_state["process_comparison"]["Advanced Interleaved (6-5-5)"] = {
             "Total Cycles": int(yield_energy_df_655["Complete Cycles"].sum()),
@@ -4021,7 +4043,9 @@ with tab4:
 
         st.markdown("### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule_4group, PAIRS_4GROUP, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+        util_df_4group = _pair_utilization(adv_schedule_4group, PAIRS_4GROUP, TOTAL_MINUTES_ADV)
+        st.dataframe(util_df_4group, use_container_width=True, hide_index=True)
+        _draw_idle_chart(util_df_4group, "Idle Time per Pair — 4-Group Configuration")
 
         st.session_state["process_comparison"]["Advanced Interleaved (4-Group)"] = {
             "Total Cycles": int(yield_energy_df_4group["Complete Cycles"].sum()),
@@ -4049,7 +4073,9 @@ with tab4:
 
         st.markdown("### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule_4x4, PAIRS_4X4, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+        util_df_4x4 = _pair_utilization(adv_schedule_4x4, PAIRS_4X4, TOTAL_MINUTES_ADV)
+        st.dataframe(util_df_4x4, use_container_width=True, hide_index=True)
+        _draw_idle_chart(util_df_4x4, "Idle Time per Pair — 4-4-4-4 Configuration")
 
         st.session_state["process_comparison"]["Advanced Interleaved (4-4-4-4)"] = {
             "Total Cycles": int(yield_energy_df_4x4["Complete Cycles"].sum()),
@@ -4077,7 +4103,9 @@ with tab4:
 
         st.markdown("### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        st.dataframe(_pair_utilization(adv_schedule_n3n4, PAIRS_N3N4, TOTAL_MINUTES_ADV), use_container_width=True, hide_index=True)
+        util_df_n3n4 = _pair_utilization(adv_schedule_n3n4, PAIRS_N3N4, TOTAL_MINUTES_ADV)
+        st.dataframe(util_df_n3n4, use_container_width=True, hide_index=True)
+        _draw_idle_chart(util_df_n3n4, "Idle Time per Pair — 2-2-2-2 (N3/N4) Configuration")
 
         st.session_state["process_comparison"]["Advanced Interleaved (2-2-2-2 N3/N4)"] = {
             "Total Cycles": int(yield_energy_df_n3n4["Complete Cycles"].sum()),
