@@ -4122,6 +4122,7 @@ with tab4:
             'Cooling': '#9370DB',
             'Repressurization': '#B0B0B0'
         }
+        IDLE_GANTT_COLOR = '#D9D9D9'
 
         def _draw_advanced_gantt(schedule_df, total_minutes, title):
             fig, ax = plt.subplots(figsize=(14, 5))
@@ -4133,14 +4134,30 @@ with tab4:
                     color=gantt_colors.get(row["Phase"], "#888"),
                     edgecolor="black"
                 )
+            # Idle segments: the gaps in each pair's own timeline where it isn't
+            # scheduled in any phase at all (e.g. waiting on a shared resource) —
+            # drawn on top of the same bars rather than replacing the separate
+            # "Pair Utilisation & Idle Time" table/chart above, which still shows
+            # the totals.
+            for pair in schedule_df["Pair"].unique():
+                pair_rows = schedule_df[schedule_df["Pair"] == pair].sort_values("Start")
+                cursor = 0
+                for _, row in pair_rows.iterrows():
+                    if row["Start"] > cursor:
+                        ax.barh(pair, row["Start"] - cursor, left=cursor, color=IDLE_GANTT_COLOR, edgecolor="black", hatch="//")
+                    cursor = max(cursor, row["End"])
+                if cursor < total_minutes:
+                    ax.barh(pair, total_minutes - cursor, left=cursor, color=IDLE_GANTT_COLOR, edgecolor="black", hatch="//")
             ax.set_xlabel("Time (minutes)")
             ax.set_ylabel("Pairs")
             ax.set_title(title)
             ax.set_xlim(0, total_minutes)
             ax.grid(True, axis="x", linestyle="--", alpha=0.4)
+            legend_labels = PHASES + ["Idle"]
+            legend_colors = [gantt_colors[p] for p in PHASES] + [IDLE_GANTT_COLOR]
             ax.legend(
-                [plt.Rectangle((0, 0), 1, 1, color=gantt_colors[p]) for p in PHASES],
-                PHASES,
+                [plt.Rectangle((0, 0), 1, 1, color=c) for c in legend_colors],
+                legend_labels,
                 loc="upper right",
                 fontsize=8
             )
