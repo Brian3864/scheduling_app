@@ -499,7 +499,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Three configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a smaller **4-4** setup (an 8-module plant, Group A + B of 4 modules each, defaulting to N1N2-M1n3's real Duration/Energy and N3-M2n4's real Yield doubled), and a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4, Duration/Energy from N2N3-M1n3, Yield from N3-M1n3/N3-M2n4 doubled), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N1, N2 & N3's M1/M3, Group B = N1, N2 & N3's M2/M4, Duration/Energy from N1N2N3-M1n3's own real average — an exact match for Group A — Yield from a weighted sum of N3 and N2's same-type real averages)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -518,7 +518,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across twelve processes: Concurrent, Interleaved, Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2) from Full Schedule Analysis's three configurations, and all six Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-Group, 4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across fourteen processes: Concurrent, Interleaved, Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all six Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-Group, 4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -1726,6 +1726,154 @@ with tab3:
         "Cooling": shared_evac_cooling_cap_22,
     }
 
+    # === "6-6" Configuration: a fourth, separate analysis ===
+    # A 12-module plant split into two 6-module pairs — Group A = N1&N2&N3's
+    # M1&M3, Group B = N1&N2&N3's M2&M4. N1N2N3-M1n3 is itself a real recorded
+    # 6-module combination (an exact physical match for Group A), so Phase
+    # durations AND Energy per Cycle both come from its own real average, for
+    # both pairs (Group B borrows it as the closest-size proxy, same pattern as
+    # the 4-4 config above). Yield per Cycle instead uses a weighted sum per
+    # pair, each built from BAG CO2 data: Group A = N3-M1n3 x2 + N2-M1n3,
+    # Group B = N3-M2n4 x2 + N2-M2n4 (the M2n4-type mirror of Group A's
+    # formula). Shares the Operating Period and Evacuation/Cooling behavior
+    # checkboxes with the 8-8 config above, since those are plant-wide settings.
+    st.markdown("### 6-6 Configuration")
+    st.caption(
+        "A fourth full-schedule analysis: a 12-module plant split into two "
+        "6-module pairs — Group A = N1, N2 & N3's M1/M3, Group B = N1, N2 & N3's "
+        "M2/M4 — run through the same Concurrent/Interleaved engine for "
+        "side-by-side comparison. N1N2N3-M1n3 is a real recorded 6-module "
+        "combination (an exact match for Group A), so Phase durations and "
+        "Energy per Cycle both come from its own real average, for both pairs. "
+        "Yield per Cycle instead uses a weighted sum per pair: Group A = "
+        "N3-M1n3 x2 + N2-M1n3, Group B = N3-M2n4 x2 + N2-M2n4 — the M2n4-type "
+        "mirror of Group A's formula."
+    )
+    TAB3_66_TOTAL_MODULES = 12
+    MODULES_66 = list(range(1, TAB3_66_TOTAL_MODULES + 1))
+    GROUP_OF_66 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_66}
+    TAB3_66_MODULE_MAP = {"A": "N1N2N3-M1n3", "B": "N1N2N3-M1n3"}
+    TAB3_66_YIELD_FORMULA = {
+        "A": [("N3-M1n3", 2), ("N2-M1n3", 1)],
+        "B": [("N3-M2n4", 2), ("N2-M2n4", 1)],
+    }
+    # Group A's real modules match its source combo exactly; Group B represents
+    # a different physical 6-module combination (M2/M4 instead of M1/M3) than
+    # the one it borrows Duration/Energy from.
+    REPRESENTS_TAB3_66 = {
+        "B": "N1-M2, N1-M4, N2-M2, N2-M4, N3-M2, N3-M4 (not directly recorded)",
+    }
+    PAIR_PHYSICAL_MODULES_TAB3_66 = {
+        "A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3", "N3-M1", "N3-M3"],
+        "B": ["N1-M2", "N1-M4", "N2-M2", "N2-M4", "N3-M2", "N3-M4"],
+    }
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of this configuration's 12 real modules are grouped together for desorption.")
+    st.dataframe(physical_pairing_table(["A", "B"], PAIR_PHYSICAL_MODULES_TAB3_66), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+    st.dataframe(
+        module_mapping_table(
+            ["A", "B"], TAB3_66_MODULE_MAP, TAB3_66_MODULE_MAP, TAB3_66_YIELD_FORMULA,
+            represents_map=REPRESENTS_TAB3_66,
+        ),
+        use_container_width=True, hide_index=True,
+    )
+
+    cap66_col1, cap66_col2 = st.columns(2)
+    with cap66_col1:
+        adsorption_capacity_66 = st.number_input(
+            "Adsorption capacity (6-6)", 1, TAB3_66_TOTAL_MODULES, 6,
+            help="Max modules in Adsorption at once.", key="adsorption_capacity_66",
+        )
+    with cap66_col2:
+        concurrent_desorption_cap_66 = st.number_input(
+            "Concurrent: Max modules in desorption (6-6)", 1, TAB3_66_TOTAL_MODULES, 6,
+            help="Max modules in desorption phases + Cooling at the same time.", key="concurrent_desorption_cap_66",
+        )
+        shared_evac_cooling_cap_66 = st.number_input(
+            "Max modules: Evacuation / Cooling (6-6, Interleaved)", 1, TAB3_66_TOTAL_MODULES, 6,
+            help="One shared resource for both phases. Max modules in Evacuation or Cooling combined at once.",
+            key="shared_evac_cooling_cap_66",
+        )
+        shared_purge_heat_co2_cap_66 = st.number_input(
+            "Max modules: NCG + Heating + CO2 (6-6, Interleaved)", 1, TAB3_66_TOTAL_MODULES, 6,
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once.",
+            key="shared_purge_heat_co2_cap_66",
+        )
+
+    default_phase_durations_66 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_66_MODULE_MAP)
+    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N1N2N3-M1n3 cycle average.")
+    PHASE_DURATIONS_TAB3_66_VERSION = 1
+    get_versioned_default_table(
+        "phase_durations_tab3_66", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_66_VERSION,
+        lambda: pd.DataFrame({
+            "Phase": PHASES,
+            "Group A (min)": [default_phase_durations_66.get("A", {}).get(phase, CORE_PHASE_FALLBACK_DURATIONS[phase]) for phase in PHASES],
+            "Group B (min)": [default_phase_durations_66.get("B", {}).get(phase, CORE_PHASE_FALLBACK_DURATIONS[phase]) for phase in PHASES],
+        }),
+    )
+    adv_phase_table_66 = st.data_editor(
+        st.session_state.phase_durations_tab3_66,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Phase": st.column_config.TextColumn("Phase", disabled=True),
+            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+        },
+        key="phase_durations_editor_tab3_66",
+    )
+    st.session_state.phase_durations_tab3_66 = adv_phase_table_66
+    grp_a_66 = {phase: int(adv_phase_table_66.loc[adv_phase_table_66["Phase"] == phase, "Group A (min)"].iloc[0]) for phase in PHASES}
+    grp_b_66 = {phase: int(adv_phase_table_66.loc[adv_phase_table_66["Phase"] == phase, "Group B (min)"].iloc[0]) for phase in PHASES}
+    PHASE_DURATIONS_66 = grp_a_66
+    PHASE_DURATIONS_BY_GROUP_66 = {"A": grp_a_66, "B": grp_b_66}
+
+    default_energy_yield_66 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_66_MODULE_MAP, TAB3_66_YIELD_FORMULA)
+    st.caption(
+        f"Energy per Cycle uses N1N2N3-M1n3's own real average; Yield per Cycle uses the weighted "
+        f"sums described above: {default_energy_yield_66}. Edit per pair if a pair's real output differs."
+    )
+    ENERGY_YIELD_TAB3_66_VERSION = 1
+    get_versioned_default_table(
+        "energy_yield_tab3_66", ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"], ENERGY_YIELD_TAB3_66_VERSION,
+        lambda: pd.DataFrame({
+            "Pair": ["Group A", "Group B"],
+            "Energy per Cycle (kWh)": [default_energy_yield_66["A"][0], default_energy_yield_66["B"][0]],
+            "Yield per Cycle (kg CO2)": [default_energy_yield_66["A"][1], default_energy_yield_66["B"][1]],
+        }),
+    )
+    energy_yield_table_66 = st.data_editor(
+        st.session_state.energy_yield_tab3_66,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pair": st.column_config.TextColumn("Pair", disabled=True),
+            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+        },
+        key="energy_yield_editor_tab3_66",
+    )
+    st.session_state.energy_yield_tab3_66 = energy_yield_table_66
+    PAIR_ENERGY_PER_CYCLE_TAB3_66 = {
+        gid: float(energy_yield_table_66.loc[energy_yield_table_66["Pair"] == f"Group {gid}", "Energy per Cycle (kWh)"].iloc[0])
+        for gid in ["A", "B"]
+    }
+    PAIR_YIELD_PER_CYCLE_TAB3_66 = {
+        gid: float(energy_yield_table_66.loc[energy_yield_table_66["Pair"] == f"Group {gid}", "Yield per Cycle (kg CO2)"].iloc[0])
+        for gid in ["A", "B"]
+    }
+    RESOURCE_LIMITS_66 = {
+        "Adsorption": min(int(adsorption_capacity_66), TAB3_66_TOTAL_MODULES),
+        "Evacuation": shared_evac_cooling_cap_66,
+        "NCG Purging": shared_purge_heat_co2_cap_66,
+        "Heating": shared_purge_heat_co2_cap_66,
+        "CO2 Purging": shared_purge_heat_co2_cap_66,
+        "Cooling": shared_evac_cooling_cap_66,
+    }
+
     selected_delay = 0 # Default value, will be updated based on user choice
 
     def build_module_delays(offset, group_ids, group_of, modules):
@@ -2605,6 +2753,14 @@ with tab3:
             PHASE_DURATIONS_22, PHASE_DURATIONS_BY_GROUP_22, RESOURCE_LIMITS_22,
             PAIR_ENERGY_PER_CYCLE_TAB3_22, PAIR_YIELD_PER_CYCLE_TAB3_22,
             concurrent_desorption_cap_22, shared_evac_cooling_cap_22, shared_purge_heat_co2_cap_22,
+        )
+        st.markdown("---")
+        run_and_display_config(
+            "6-6 Configuration", "_66", " (6-6)",
+            MODULES_66, GROUP_IDS, GROUP_OF_66,
+            PHASE_DURATIONS_66, PHASE_DURATIONS_BY_GROUP_66, RESOURCE_LIMITS_66,
+            PAIR_ENERGY_PER_CYCLE_TAB3_66, PAIR_YIELD_PER_CYCLE_TAB3_66,
+            concurrent_desorption_cap_66, shared_evac_cooling_cap_66, shared_purge_heat_co2_cap_66,
         )
 
 with tab2:
@@ -4010,7 +4166,7 @@ with tab5:
 
     PROCESS_ORDER = [
         "Concurrent", "Interleaved", "Concurrent (4-4)", "Interleaved (4-4)",
-        "Concurrent (2-2)", "Interleaved (2-2)",
+        "Concurrent (2-2)", "Interleaved (2-2)", "Concurrent (6-6)", "Interleaved (6-6)",
         "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)",
         "Advanced Interleaved (6-5-5)",
         "Advanced Interleaved (4-Group)", "Advanced Interleaved (4-4-4-4)",
@@ -4023,6 +4179,8 @@ with tab5:
         "Interleaved (4-4)": "#F0A382",
         "Concurrent (2-2)": "#5B4E9E",
         "Interleaved (2-2)": "#B0664C",
+        "Concurrent (6-6)": "#4C3B99",
+        "Interleaved (6-6)": "#C97A4A",
         "Advanced Interleaved (6-6-4)": "#2ECC71",
         "Advanced Interleaved (8-4-4)": "#F39C12",
         "Advanced Interleaved (6-5-5)": "#D35400",
