@@ -2193,8 +2193,8 @@ with tab3:
 
         def pair_yield_energy(pair_totals_df):
             """Multiply each pair's Total Cycles by the per-cycle Energy/Yield rate
-            entered for that pair to get plant output totals, plus a derived kg CO2
-            per kWh efficiency figure."""
+            entered for that pair to get plant output totals, plus a derived kWh
+            per kg CO2 efficiency figure."""
             df = pair_totals_df.copy()
             gids = df["Pair"].str.replace("Group ", "", regex=False)
             df["Total Yield (kg CO2)"] = [
@@ -2203,8 +2203,8 @@ with tab3:
             df["Total Energy (kWh)"] = [
                 round(cycles * PAIR_ENERGY_PER_CYCLE[gid], 1) for cycles, gid in zip(df["Total Cycles"], gids)
             ]
-            df["kg CO2 per kWh"] = [
-                round(y / e, 3) if e > 0 else "—"
+            df["kWh per kg CO2"] = [
+                round(e / y, 3) if y > 0 else "—"
                 for y, e in zip(df["Total Yield (kg CO2)"], df["Total Energy (kWh)"])
             ]
             return df
@@ -3705,7 +3705,7 @@ with tab4:
                 "Complete Cycles": cycles,
                 "Total Yield (kg CO2)": round(total_yield, 1),
                 "Total Energy (kWh)": round(total_energy, 1),
-                "kg CO2 per kWh": round(total_yield / total_energy, 3) if total_energy > 0 else "—",
+                "kWh per kg CO2": round(total_energy / total_yield, 3) if total_yield > 0 else "—",
             })
         return pd.DataFrame(rows)
 
@@ -4049,9 +4049,9 @@ with tab5:
                 "Total Cycles": comparison[p]["Total Cycles"],
                 "Total Yield (kg CO2)": round(comparison[p]["Total Yield (kg CO2)"], 1),
                 "Total Energy (kWh)": round(comparison[p]["Total Energy (kWh)"], 1),
-                "kg CO2 per kWh": (
-                    round(comparison[p]["Total Yield (kg CO2)"] / comparison[p]["Total Energy (kWh)"], 3)
-                    if comparison[p]["Total Energy (kWh)"] > 0 else "—"
+                "kWh per kg CO2": (
+                    round(comparison[p]["Total Energy (kWh)"] / comparison[p]["Total Yield (kg CO2)"], 3)
+                    if comparison[p]["Total Yield (kg CO2)"] > 0 else "—"
                 ),
             }
             for p in available_processes
