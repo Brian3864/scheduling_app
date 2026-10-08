@@ -267,8 +267,10 @@ def _plant_cycles_df():
         return None
 
 def _module_average(plant_cycles_df, module):
-    """(avg eTotal kWh, avg DES CO2 kg) for one Module value's rows, or (0.0, 0.0)
-    if there are none (or the log failed to load)."""
+    """(avg eTotal kWh, avg BAG CO2 kg) for one Module value's rows, or (0.0, 0.0)
+    if there are none (or the log failed to load). Yield is sourced from BAG CO2
+    (kg) — the actual captured/bagged CO2 — not DES CO2 (kg), which is a
+    desorption-side figure that can diverge from what's actually collected."""
     if plant_cycles_df is None:
         return 0.0, 0.0
     subset = plant_cycles_df[plant_cycles_df["Module"] == module]
@@ -276,7 +278,7 @@ def _module_average(plant_cycles_df, module):
         return 0.0, 0.0
     return (
         round(float(subset["eTotal kWh"].mean()), 2),
-        round(float(subset["DES CO2 (kg)"].mean()), 2),
+        round(float(subset["BAG CO2 (kg)"].mean()), 2),
     )
 
 def _decode_module_combo(combo):
@@ -341,7 +343,7 @@ def physical_pairing_table(pairs, physical_modules_map):
     return pd.DataFrame(rows)
 
 def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
-    """Return {pair: (avg eTotal kWh, avg DES CO2 kg)}. Energy per Cycle comes from
+    """Return {pair: (avg eTotal kWh, avg BAG CO2 kg)}. Energy per Cycle comes from
     each pair's single matching Module (energy_module_map). Yield per Cycle instead
     comes from a weighted sum of one or more Module averages (yield_formula_map,
     e.g. {"Group A": [("N1N2N3-M1n3", 1), ("N3-M2n4", 1)]}). A pair missing from
@@ -369,7 +371,7 @@ def load_plant_cycle_defaults_by_pair(pairs):
 TAB3_PLANT_MODULES = ["N1N2N3-M1n3", "N3-M2n4"]
 
 def load_plant_cycle_defaults_tab3():
-    """Return (avg eTotal kWh, avg DES CO2 kg) summed across TAB3_PLANT_MODULES,
+    """Return (avg eTotal kWh, avg BAG CO2 kg) summed across TAB3_PLANT_MODULES,
     used as the shared default for both Group A and Group B."""
     plant_cycles_df = _plant_cycles_df()
     energy_total = 0.0
