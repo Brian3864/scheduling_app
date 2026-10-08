@@ -499,7 +499,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4, Duration/Energy from N2N3-M1n3, Yield from N3-M1n3/N3-M2n4 doubled), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N1, N2 & N3's M1/M3, Group B = N1, N2 & N3's M2/M4, Duration/Energy from N1N2N3-M1n3's own real average — an exact match for Group A — Yield from a weighted sum of N3 and N2's same-type real averages)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4, Duration/Energy from N2N3-M1n3, Yield from N3-M1n3/N3-M2n4 doubled), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — Duration/Energy from N1N2N3-M1n3's own real average as the closest-size proxy, Yield from a weighted sum of N3 and N2's same-type real averages)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -1727,27 +1727,27 @@ with tab3:
     }
 
     # === "6-6" Configuration: a fourth, separate analysis ===
-    # A 12-module plant split into two 6-module pairs — Group A = N1&N2&N3's
-    # M1&M3, Group B = N1&N2&N3's M2&M4. N1N2N3-M1n3 is itself a real recorded
-    # 6-module combination (an exact physical match for Group A), so Phase
-    # durations AND Energy per Cycle both come from its own real average, for
-    # both pairs (Group B borrows it as the closest-size proxy, same pattern as
-    # the 4-4 config above). Yield per Cycle instead uses a weighted sum per
-    # pair, each built from BAG CO2 data: Group A = N3-M1n3 x2 + N2-M1n3,
-    # Group B = N3-M2n4 x2 + N2-M2n4 (the M2n4-type mirror of Group A's
-    # formula). Shares the Operating Period and Evacuation/Cooling behavior
+    # A 12-module plant split into two 6-module pairs — Group A = N2&N3&N4's
+    # M1&M3, Group B = N2&N3&N4's M2&M4 (no N1). Neither 6-module combination
+    # is itself recorded, so Phase durations AND Energy per Cycle both come
+    # from N1N2N3-M1n3's own real average instead — the closest real 6-module
+    # combination in size (same proxy pattern as the 4-4 config's N2N3-M1n3).
+    # Yield per Cycle instead uses a weighted sum per pair, each built from BAG
+    # CO2 data: Group A = N3-M1n3 x2 + N2-M1n3, Group B = N3-M2n4 x2 +
+    # N2-M2n4 (the M2n4-type mirror of Group A's formula) — unchanged from
+    # before. Shares the Operating Period and Evacuation/Cooling behavior
     # checkboxes with the 8-8 config above, since those are plant-wide settings.
     st.markdown("### 6-6 Configuration")
     st.caption(
         "A fourth full-schedule analysis: a 12-module plant split into two "
-        "6-module pairs — Group A = N1, N2 & N3's M1/M3, Group B = N1, N2 & N3's "
-        "M2/M4 — run through the same Concurrent/Interleaved engine for "
-        "side-by-side comparison. N1N2N3-M1n3 is a real recorded 6-module "
-        "combination (an exact match for Group A), so Phase durations and "
-        "Energy per Cycle both come from its own real average, for both pairs. "
-        "Yield per Cycle instead uses a weighted sum per pair: Group A = "
-        "N3-M1n3 x2 + N2-M1n3, Group B = N3-M2n4 x2 + N2-M2n4 — the M2n4-type "
-        "mirror of Group A's formula."
+        "6-module pairs — Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's "
+        "M2/M4 (no N1) — run through the same Concurrent/Interleaved engine for "
+        "side-by-side comparison. Neither 6-module combination is itself "
+        "recorded, so Phase durations and Energy per Cycle both come from "
+        "N1N2N3-M1n3's own real average instead (the closest real 6-module "
+        "combination in size). Yield per Cycle instead uses a weighted sum per "
+        "pair: Group A = N3-M1n3 x2 + N2-M1n3, Group B = N3-M2n4 x2 + "
+        "N2-M2n4 — the M2n4-type mirror of Group A's formula."
     )
     TAB3_66_TOTAL_MODULES = 12
     MODULES_66 = list(range(1, TAB3_66_TOTAL_MODULES + 1))
@@ -1757,15 +1757,15 @@ with tab3:
         "A": [("N3-M1n3", 2), ("N2-M1n3", 1)],
         "B": [("N3-M2n4", 2), ("N2-M2n4", 1)],
     }
-    # Group A's real modules match its source combo exactly; Group B represents
-    # a different physical 6-module combination (M2/M4 instead of M1/M3) than
-    # the one it borrows Duration/Energy from.
+    # Neither group's real physical modules (on N2/N3/N4) match the N1N2N3-M1n3
+    # source they borrow Duration/Energy from (which includes N1, not N4).
     REPRESENTS_TAB3_66 = {
-        "B": "N1-M2, N1-M4, N2-M2, N2-M4, N3-M2, N3-M4 (not directly recorded)",
+        "A": "N2-M1, N2-M3, N3-M1, N3-M3, N4-M1, N4-M3 (not directly recorded)",
+        "B": "N2-M2, N2-M4, N3-M2, N3-M4, N4-M2, N4-M4 (not directly recorded)",
     }
     PAIR_PHYSICAL_MODULES_TAB3_66 = {
-        "A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3", "N3-M1", "N3-M3"],
-        "B": ["N1-M2", "N1-M4", "N2-M2", "N2-M4", "N3-M2", "N3-M4"],
+        "A": ["N2-M1", "N2-M3", "N3-M1", "N3-M3", "N4-M1", "N4-M3"],
+        "B": ["N2-M2", "N2-M4", "N3-M2", "N3-M4", "N4-M2", "N4-M4"],
     }
     st.markdown("#### Physical Module Pairing")
     st.caption("Which of this configuration's 12 real modules are grouped together for desorption.")
