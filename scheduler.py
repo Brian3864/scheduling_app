@@ -1468,24 +1468,55 @@ with tab3:
     # === "4-4" Configuration: a second, separate analysis ===
     # An 8-module plant split into two 4-module pairs (vs. the 16-module 8-8 split
     # above), run through the same Concurrent/Interleaved engine for side-by-side
-    # comparison. Phase durations AND Energy per Cycle both come from N1N2-M1n3's
-    # own real average (an actual 4-module combination, unlike the 8-8 config's
-    # proxies); Yield per Cycle instead uses N3-M2n4's real Yield DOUBLED, for
-    # both pairs. Shares the Operating Period and Evacuation/Cooling behavior
-    # checkboxes with the 8-8 config above, since those are plant-wide settings.
+    # comparison. Group A = N3&N4's M1&M3, Group B = N3&N4's M2&M4. Neither
+    # 4-module combination is itself recorded, so Phase durations AND Energy per
+    # Cycle both come from N2N3-M1n3's own real average instead (an actual
+    # 4-module combination, the closest size match); Yield per Cycle instead uses
+    # each group's own module-type real Yield DOUBLED — N3-M1n3 for Group A,
+    # N3-M2n4 for Group B — since N3's real combos are only 2 modules each, half
+    # of this pair's 4. Shares the Operating Period and Evacuation/Cooling
+    # behavior checkboxes with the 8-8 config above, since those are plant-wide
+    # settings.
     st.markdown("### 4-4 Configuration")
     st.caption(
         "A second, smaller full-schedule analysis: an 8-module plant split into two "
-        "4-module pairs, run through the same Concurrent/Interleaved engine for "
-        "side-by-side comparison. Phase durations and Energy per Cycle both come "
-        "from N1N2-M1n3's own real average (an actual 4-module combination); Yield "
-        "per Cycle instead uses N3-M2n4's real Yield DOUBLED, for both pairs."
+        "4-module pairs — Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4 — "
+        "run through the same Concurrent/Interleaved engine for side-by-side "
+        "comparison. Neither 4-module combination is itself recorded, so Phase "
+        "durations and Energy per Cycle both come from N2N3-M1n3's own real "
+        "average (the closest real 4-module combination); Yield per Cycle instead "
+        "uses each group's own module-type real Yield DOUBLED — N3-M1n3 for Group "
+        "A, N3-M2n4 for Group B — since N3's real combos are only 2 modules each."
     )
     TAB3_44_TOTAL_MODULES = 8
     MODULES_44 = list(range(1, TAB3_44_TOTAL_MODULES + 1))
     GROUP_OF_44 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_44}
-    TAB3_44_MODULE_MAP = {"A": "N1N2-M1n3", "B": "N1N2-M1n3"}
-    TAB3_44_YIELD_FORMULA = {"A": [("N3-M2n4", 2)], "B": [("N3-M2n4", 2)]}
+    TAB3_44_MODULE_MAP = {"A": "N2N3-M1n3", "B": "N2N3-M1n3"}
+    TAB3_44_YIELD_FORMULA = {"A": [("N3-M1n3", 2)], "B": [("N3-M2n4", 2)]}
+    # Neither group's real physical modules match the N2N3-M1n3 source they
+    # borrow Duration/Energy from (N2N3-M1n3 is N2 & N3's M1/M3; these groups are
+    # N3 & N4's own M1/M3 and M2/M4 respectively) — physical composition below.
+    REPRESENTS_TAB3_44 = {
+        "A": "N3-M1, N3-M3, N4-M1, N4-M3 (not directly recorded)",
+        "B": "N3-M2, N3-M4, N4-M2, N4-M4 (not directly recorded)",
+    }
+    PAIR_PHYSICAL_MODULES_TAB3_44 = {
+        "A": ["N3-M1", "N3-M3", "N4-M1", "N4-M3"],
+        "B": ["N3-M2", "N3-M4", "N4-M2", "N4-M4"],
+    }
+    st.markdown("#### Physical Module Pairing")
+    st.caption("Which of this configuration's 8 real modules are grouped together for desorption.")
+    st.dataframe(physical_pairing_table(["A", "B"], PAIR_PHYSICAL_MODULES_TAB3_44), use_container_width=True, hide_index=True)
+
+    st.markdown("#### Data Sourcing")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+    st.dataframe(
+        module_mapping_table(
+            ["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA,
+            represents_map=REPRESENTS_TAB3_44,
+        ),
+        use_container_width=True, hide_index=True,
+    )
 
     cap44_col1, cap44_col2 = st.columns(2)
     with cap44_col1:
