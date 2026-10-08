@@ -168,34 +168,34 @@ PAIR_PHYSICAL_MODULES_4X4 = {
 
 # "2-2-2-2 (N3/N4)" configuration: a second 4-equal-group config, this time
 # covering only Nelion 3 and Nelion 4 (8 of 16 modules) instead of the full
-# plant. Group A = N3's M1&M3, Group B = N3's M2&M4, Group C = N4's M1&M3,
-# Group D = N4's M2&M4. N3-M1n3 and N3-M2n4 both have their own real data
-# (Group A and B use it directly, no proxy needed); N4-M1n3 and N4-M2n4 have
-# no recorded cycles at all, so Group C mirrors Group A's real N3-M1n3 data
-# and Group D mirrors Group B's real N3-M2n4 data — same module TYPE, just a
-# different Nelion, and since every group is already a genuine 2-module pair
-# (unlike 4-4-4-4's 4-module groups), no multiplier is needed anywhere.
-# Adsorption overlap is unrestricted for all 4 pairs, same as 4-Group and
-# 4-4-4-4 above.
+# plant. Grouped by module TYPE rather than by Nelion: Group A = N3's M1&M3,
+# Group B = N4's M1&M3, Group C = N3's M2&M4, Group D = N4's M2&M4.
+# N3-M1n3 and N3-M2n4 both have their own real data (Group A and C use it
+# directly, no proxy needed); N4-M1n3 and N4-M2n4 have no recorded cycles at
+# all, so Group B mirrors Group A's real N3-M1n3 data and Group D mirrors
+# Group C's real N3-M2n4 data — same module TYPE, just a different Nelion,
+# and since every group is already a genuine 2-module pair (unlike 4-4-4-4's
+# 4-module groups), no multiplier is needed anywhere. Adsorption overlap is
+# unrestricted for all 4 pairs, same as 4-Group and 4-4-4-4 above.
 PAIRS_N3N4 = ["Group A", "Group B", "Group C", "Group D"]
 PAIR_MODULE_N3N4 = {
     "Group A": "N3-M1n3",
-    "Group B": "N3-M2n4",
-    "Group C": "N3-M1n3",
+    "Group B": "N3-M1n3",
+    "Group C": "N3-M2n4",
     "Group D": "N3-M2n4",
 }
 PAIR_YIELD_FORMULA_N3N4 = {
     "Group A": [("N3-M1n3", 1)],
-    "Group B": [("N3-M2n4", 1)],
-    "Group C": [("N3-M1n3", 1)],
+    "Group B": [("N3-M1n3", 1)],
+    "Group C": [("N3-M2n4", 1)],
     "Group D": [("N3-M2n4", 1)],
 }
-# Group A and B's real modules match their source combo exactly; Group C and
+# Group A and C's real modules match their source combo exactly; Group B and
 # D each represent a different physical 2-module combination (on Nelion 4)
 # than the one they borrow real averages from (Nelion 4 has no recorded
 # cycles of its own at all).
 REPRESENTS_N3N4 = {
-    "Group C": "N4-M1, N4-M3 (not directly recorded — mirrors N3-M1n3)",
+    "Group B": "N4-M1, N4-M3 (not directly recorded — mirrors N3-M1n3)",
     "Group D": "N4-M2, N4-M4 (not directly recorded — mirrors N3-M2n4)",
 }
 # The actual physical desorption grouping for 2-2-2-2 (N3/N4) — a partition of
@@ -203,8 +203,8 @@ REPRESENTS_N3N4 = {
 # configuration at all).
 PAIR_PHYSICAL_MODULES_N3N4 = {
     "Group A": ["N3-M1", "N3-M3"],
-    "Group B": ["N3-M2", "N3-M4"],
-    "Group C": ["N4-M1", "N4-M3"],
+    "Group B": ["N4-M1", "N4-M3"],
+    "Group C": ["N3-M2", "N3-M4"],
     "Group D": ["N4-M2", "N4-M4"],
 }
 
@@ -511,7 +511,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
 - Six configurations are compared side by side, grouped into two families:
   - **3-Pair Configurations** (original Adsorption-overlap rule: one privileged pair can overlap Adsorption with the other two, but those two cannot overlap each other): 6-6-4 and 8-4-4 (different module-to-pair groupings), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield)
-  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-Group (3 non-overlapping real Module combinations plus a 4th pair extrapolating Nelion 1's M2/M4 and all of Nelion 4 from Nelion 3's real data, covering all 16 modules), 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules — Group A/B use N3-M1n3/N3-M2n4's own real data directly, Group C/D mirror the same two real sources for Nelion 4, which has no recorded cycles of its own)
+  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-Group (3 non-overlapping real Module combinations plus a 4th pair extrapolating Nelion 1's M2/M4 and all of Nelion 4 from Nelion 3's real data, covering all 16 modules), 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: Group A/C use N3-M1n3/N3-M2n4's own real data directly, Group B/D mirror the same two real sources for Nelion 4, which has no recorded cycles of its own)
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
@@ -3325,13 +3325,13 @@ with tab4:
     st.markdown("### 2-2-2-2 (N3/N4) Configuration (Adsorption Overlap Allowed)")
     st.caption(
         "A second 4-equal-group configuration, covering only Nelion 3 and Nelion 4 (8 of 16 "
-        "modules) instead of the full plant: Group A = N3's M1/M3, Group B = N3's M2/M4, "
-        "Group C = N4's M1/M3, Group D = N4's M2/M4. Group A and Group B use N3-M1n3 and "
-        "N3-M2n4's own real averages directly — no proxy needed. Nelion 4 has no recorded "
-        "cycles at all, so Group C mirrors Group A's real N3-M1n3 data and Group D mirrors "
-        "Group B's real N3-M2n4 data; since every group here is already a genuine 2-module "
-        "pair, no multiplier is applied anywhere. Adsorption overlap is unrestricted for all "
-        "4 pairs."
+        "modules) instead of the full plant, grouped by module type rather than by Nelion: "
+        "Group A = N3's M1/M3, Group B = N4's M1/M3, Group C = N3's M2/M4, Group D = N4's "
+        "M2/M4. Group A and Group C use N3-M1n3 and N3-M2n4's own real averages directly — "
+        "no proxy needed. Nelion 4 has no recorded cycles at all, so Group B mirrors Group "
+        "A's real N3-M1n3 data and Group D mirrors Group C's real N3-M2n4 data; since every "
+        "group here is already a genuine 2-module pair, no multiplier is applied anywhere. "
+        "Adsorption overlap is unrestricted for all 4 pairs."
     )
     st.markdown("#### Physical Module Pairing")
     st.caption("Which of Nelion 3 and Nelion 4's 8 real modules are grouped together for desorption in this configuration.")
