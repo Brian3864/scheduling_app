@@ -72,61 +72,6 @@ PAIR_PHYSICAL_MODULES_8_4_4 = {
     "Group C": ["N3-M2", "N4-M2", "N3-M4", "N4-M4"],
 }
 
-# "4-Group" configuration: 4 pairs built from NON-OVERLAPPING real Module
-# combinations (Group A = N1N2N3-M1n3, Group B = N3-M2n4, Group C = N2-M2n4),
-# so their Yields can be safely added together without double-counting any
-# physical module, plus a 4th pair (Group D) to cover the full 16 modules.
-# Group D represents 6 modules that have ZERO
-# recorded cycles in either CSV — Nelion 1's M2 & M4, and all of Nelion 4 (M1,
-# M2, M3, M4). Its Energy/Yield per Cycle is N3-M2n4's rate TRIPLED — three
-# independent N3-M2n4-like 2-module units combined into one pair, the same "xN"
-# pattern already used for the 6-6-4 configuration's Group B (x2). Its phase
-# DURATIONS, though, come from N1N2N3-M1n3 instead of N3-M2n4: a 2-module
-# combination's cycle timing doesn't represent a 6-module pair well, so
-# duration is deliberately sourced separately from a larger real combination
-# (hence two separate maps below — duration and energy/yield are allowed to
-# diverge per pair, same as the 6-6-4 configuration's Energy vs. Yield split).
-# With Group A/B/C's 10 modules, this reaches all 16.
-#
-# The scheduler's original "one privileged pair overlaps, the other two don't
-# overlap each other" Adsorption rule doesn't generalize to a 4th pair without
-# guessing at an unknown fan-sharing constraint, so per instruction this
-# configuration instead allows every pair's Adsorption to overlap freely with
-# every other pair's (see the free_adsorption_overlap argument on
-# run_advanced_interleaved).
-PAIRS_4GROUP = ["Group A", "Group B", "Group C", "Group D"]
-PAIR_DURATION_MODULE_4GROUP = {
-    "Group A": "N1N2N3-M1n3",
-    "Group B": "N3-M2n4",
-    "Group C": "N2-M2n4",
-    "Group D": "N1N2N3-M1n3",  # a 6-module pair's timing better matches this larger combination
-}
-PAIR_ENERGY_MODULE_4GROUP = {
-    "Group A": "N1N2N3-M1n3",
-    "Group B": "N3-M2n4",
-    "Group C": "N2-M2n4",
-    "Group D": "N3-M2n4",  # Energy per Cycle still N3-M2n4 (x1) — only Yield is tripled below
-}
-PAIR_YIELD_FORMULA_4GROUP = {
-    "Group A": [("N1N2N3-M1n3", 1)],
-    "Group B": [("N3-M2n4", 1)],
-    "Group C": [("N2-M2n4", 1)],
-    "Group D": [("N3-M2n4", 3)],
-}
-# Only Group D's real modules diverge from its data sources — the other three
-# pairs' physical modules ARE their (single, un-extrapolated) source combo.
-REPRESENTS_4GROUP = {
-    "Group D": "N1-M2, N1-M4, N4-M1, N4-M2, N4-M3, N4-M4 (no recorded cycles for any of these)",
-}
-# The actual physical desorption grouping for 4-Group — a full, non-overlapping
-# partition of all 16 modules (matches REPRESENTS_4GROUP's Group D description).
-PAIR_PHYSICAL_MODULES_4GROUP = {
-    "Group A": ["N1-M1", "N1-M3", "N2-M1", "N2-M3", "N3-M1", "N3-M3"],
-    "Group B": ["N3-M2", "N3-M4"],
-    "Group C": ["N2-M2", "N2-M4"],
-    "Group D": ["N1-M2", "N1-M4", "N4-M1", "N4-M2", "N4-M3", "N4-M4"],
-}
-
 # "4-4-4-4" configuration: 4 equal 4-module pairs, one per Nelion-pair x position
 # combination — Group A = N1&N2's M1/M3, Group B = N1&N2's M2/M4, Group C =
 # N3&N4's M1/M3, Group D = N3&N4's M2/M4. Only Group A's combination
@@ -135,7 +80,8 @@ PAIR_PHYSICAL_MODULES_4GROUP = {
 # come from N1N2-M1n3's own real average. Yield per Cycle instead splits: Group
 # A and Group B keep N1N2-M1n3's own real Yield, while Group C and Group D use
 # N3-M2n4's real Yield DOUBLED. Adsorption overlap is unrestricted for all 4
-# pairs, same as the 4-Group configuration.
+# pairs, since the original 3-pair rule doesn't generalize to a 4th pair
+# without guessing at an unknown fan-sharing constraint.
 PAIRS_4X4 = ["Group A", "Group B", "Group C", "Group D"]
 PAIR_MODULE_4X4 = {
     "Group A": "N1N2-M1n3",
@@ -176,7 +122,7 @@ PAIR_PHYSICAL_MODULES_4X4 = {
 # Group C's real N3-M2n4 data — same module TYPE, just a different Nelion,
 # and since every group is already a genuine 2-module pair (unlike 4-4-4-4's
 # 4-module groups), no multiplier is needed anywhere. Adsorption overlap is
-# unrestricted for all 4 pairs, same as 4-Group and 4-4-4-4 above.
+# unrestricted for all 4 pairs, same as 4-4-4-4 above.
 PAIRS_N3N4 = ["Group A", "Group B", "Group C", "Group D"]
 PAIR_MODULE_N3N4 = {
     "Group A": "N3-M1n3",
@@ -511,14 +457,14 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
 - Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
-- Six configurations are compared side by side, grouped into two families:
+- Five configurations are compared side by side, grouped into two families:
   - **3-Pair Configurations** (original Adsorption-overlap rule: one privileged pair can overlap Adsorption with the other two, but those two cannot overlap each other): 6-6-4 and 8-4-4 (different module-to-pair groupings), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield)
-  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-Group (3 non-overlapping real Module combinations plus a 4th pair extrapolating Nelion 1's M2/M4 and all of Nelion 4 from Nelion 3's real data, covering all 16 modules), 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: Group A/C use N3-M1n3/N3-M2n4's own real data directly, Group B/D mirror the same two real sources for Nelion 4, which has no recorded cycles of its own)
+  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: Group A/C use N3-M1n3/N3-M2n4's own real data directly, Group B/D mirror the same two real sources for Nelion 4, which has no recorded cycles of its own)
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across fourteen processes: Concurrent, Interleaved, Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all six Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-Group, 4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across thirteen processes: Concurrent, Interleaved, Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -2644,6 +2590,13 @@ with tab3:
                 st.dataframe(util_int, use_container_width=True, hide_index=True)
             st.caption("Active = time in any phase. Idle = waiting/unused time.")
 
+        # Add Avg Idle/Utilisation to the Concurrent/Interleaved entries already
+        # published above, for the Yield vs Cycles tab's idle-time summary.
+        st.session_state["process_comparison"][f"Concurrent{comparison_suffix}"]["Avg Idle (min)"] = round(float(util_conc["Idle (min)"].mean()), 1)
+        st.session_state["process_comparison"][f"Concurrent{comparison_suffix}"]["Avg Utilisation %"] = round(float(util_conc["Utilisation %"].mean()), 1)
+        st.session_state["process_comparison"][f"Interleaved{comparison_suffix}"]["Avg Idle (min)"] = round(float(util_int["Idle (min)"].mean()), 1)
+        st.session_state["process_comparison"][f"Interleaved{comparison_suffix}"]["Avg Utilisation %"] = round(float(util_int["Utilisation %"].mean()), 1)
+
         # Distinct colors for Interleaved vs Concurrent (not Adsorption/Desorption)
         color_interleaved = "#E07C5E"
         color_concurrent = "#6C5CE7"
@@ -3298,114 +3251,6 @@ with tab4:
         "rule doesn't generalize to a 4th pair without guessing at an unknown fan-sharing constraint."
     )
 
-    # === "4-Group" configuration ===
-    st.markdown("### 4-Group Configuration (Adsorption Overlap Allowed)")
-    st.caption(
-        "3 pairs built from NON-OVERLAPPING real Module combinations, plus a 4th pair, Group D, "
-        "to cover the full 16 modules: Group A = N1N2N3-M1n3 (6 modules), "
-        "Group B = N3-M2n4 (2), Group C = N2-M2n4 (2), Group D = 6 modules (N1's M2 & M4, plus "
-        "all of Nelion 4), since none of those have any recorded cycles in either CSV. Group D's "
-        "Energy per Cycle and Yield per Cycle (tripled) are extrapolated from N3-M2n4's real data, "
-        "but its phase durations instead come from N1N2N3-M1n3 — a 2-module combination's cycle "
-        "timing doesn't represent a 6-module pair well. Together these cover all 16 modules. "
-        "Because there's no known fan-sharing constraint for a 4th pair, every pair's Adsorption "
-        "is allowed to overlap freely with every other pair's here."
-    )
-    st.markdown("#### Physical Module Pairing")
-    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
-    st.dataframe(physical_pairing_table(PAIRS_4GROUP, PAIR_PHYSICAL_MODULES_4GROUP), use_container_width=True, hide_index=True)
-
-    st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
-    st.dataframe(
-        module_mapping_table(
-            PAIRS_4GROUP, PAIR_DURATION_MODULE_4GROUP, PAIR_ENERGY_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
-            represents_map=REPRESENTS_4GROUP,
-        ),
-        use_container_width=True, hide_index=True,
-    )
-
-    adv_phase_columns_4group = ["Phase"] + [f"{p} (min)" for p in PAIRS_4GROUP]
-    stage_defaults_4group = load_stage_duration_defaults_by_pair(PAIRS_4GROUP, PAIR_DURATION_MODULE_4GROUP)
-    ADV_PHASE_DURATIONS_4GROUP_VERSION = 2
-
-    def _pair_phase_durations_4group(pair):
-        pair_defaults = stage_defaults_4group.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
-
-    get_versioned_default_table(
-        "adv_phase_durations_4group", adv_phase_columns_4group, ADV_PHASE_DURATIONS_4GROUP_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations_4group("Group A"),
-            "Group B (min)": _pair_phase_durations_4group("Group B"),
-            "Group C (min)": _pair_phase_durations_4group("Group C"),
-            "Group D (min)": _pair_phase_durations_4group("Group D"),
-        }),
-    )
-    adv_phase_table_4group = st.data_editor(
-        st.session_state.adv_phase_durations_4group,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-            "Group D (min)": st.column_config.NumberColumn("Group D (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor_4group",
-    )
-    st.session_state.adv_phase_durations_4group = adv_phase_table_4group
-
-    PHASE_DURATIONS_BY_PAIR_4GROUP = {
-        pair: {
-            phase: int(
-                adv_phase_table_4group.loc[
-                    adv_phase_table_4group["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
-        }
-        for pair in PAIRS_4GROUP
-    }
-
-    pair_plant_defaults_4group = load_plant_cycle_defaults_weighted(
-        PAIRS_4GROUP, PAIR_ENERGY_MODULE_4GROUP, PAIR_YIELD_FORMULA_4GROUP,
-    )
-    ENERGY_YIELD_4GROUP_VERSION = 3
-    energy_yield_4group_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4_4group", energy_yield_4group_cols, ENERGY_YIELD_4GROUP_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS_4GROUP,
-            "Energy per Cycle (kWh)": [pair_plant_defaults_4group[p][0] for p in PAIRS_4GROUP],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults_4group[p][1] for p in PAIRS_4GROUP],
-        }),
-    )
-    energy_yield_table_4group = st.data_editor(
-        st.session_state.energy_yield_tab4_4group,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_4group",
-    )
-    st.session_state.energy_yield_tab4_4group = energy_yield_table_4group
-
-    PAIR_ENERGY_PER_CYCLE_4GROUP = {
-        pair: float(energy_yield_table_4group.loc[energy_yield_table_4group["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS_4GROUP
-    }
-    PAIR_YIELD_PER_CYCLE_4GROUP = {
-        pair: float(energy_yield_table_4group.loc[energy_yield_table_4group["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS_4GROUP
-    }
-
     # === "4-4-4-4" configuration ===
     st.markdown("### 4-4-4-4 Configuration (Adsorption Overlap Allowed)")
     st.caption(
@@ -3908,14 +3753,10 @@ with tab4:
         st.pyplot(fig)
         plt.close(fig)
 
-    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, 6-5-5, 4-Group, 4-4-4-4 & 2-2-2-2 N3/N4)", key="adv_generate"):
+    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, 6-5-5, 4-4-4-4 & 2-2-2-2 N3/N4)", key="adv_generate"):
         adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
         adv_schedule_655 = run_advanced_interleaved(PAIRS_6_5_5, PHASE_DURATIONS_BY_PAIR_655, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
-        adv_schedule_4group = run_advanced_interleaved(
-            PAIRS_4GROUP, PHASE_DURATIONS_BY_PAIR_4GROUP, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
-            free_adsorption_overlap=True,
-        )
         adv_schedule_4x4 = run_advanced_interleaved(
             PAIRS_4X4, PHASE_DURATIONS_BY_PAIR_4X4, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
             free_adsorption_overlap=True,
@@ -3957,6 +3798,8 @@ with tab4:
             "Total Cycles": int(yield_energy_df["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df["Total Energy (kWh)"].sum()),
+            "Avg Idle (min)": round(float(util_df["Idle (min)"].mean()), 1),
+            "Avg Utilisation %": round(float(util_df["Utilisation %"].mean()), 1),
         }
 
         st.markdown("## 8-4-4 Configuration")
@@ -3988,6 +3831,8 @@ with tab4:
             "Total Cycles": int(yield_energy_df_844["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df_844["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df_844["Total Energy (kWh)"].sum()),
+            "Avg Idle (min)": round(float(util_df_844["Idle (min)"].mean()), 1),
+            "Avg Utilisation %": round(float(util_df_844["Utilisation %"].mean()), 1),
         }
 
         st.markdown("## 6-5-5 Configuration")
@@ -4018,40 +3863,12 @@ with tab4:
             "Total Cycles": int(yield_energy_df_655["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df_655["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df_655["Total Energy (kWh)"].sum()),
+            "Avg Idle (min)": round(float(util_df_655["Idle (min)"].mean()), 1),
+            "Avg Utilisation %": round(float(util_df_655["Utilisation %"].mean()), 1),
         }
 
         st.markdown("# 4-Pair Configurations")
         st.caption("Free Adsorption overlap: every pair's Adsorption can overlap with every other pair's.")
-
-        st.markdown("## 4-Group Configuration")
-        st.markdown("### Complete Cycles")
-
-        yield_energy_df_4group = _complete_cycles_and_yield_energy(
-            adv_schedule_4group, PAIRS_4GROUP, PAIR_YIELD_PER_CYCLE_4GROUP, PAIR_ENERGY_PER_CYCLE_4GROUP
-        )
-        st.dataframe(yield_energy_df_4group[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
-        st.dataframe(yield_energy_df_4group, use_container_width=True, hide_index=True)
-
-        ye_metric_col1_4group, ye_metric_col2_4group = st.columns(2)
-        with ye_metric_col1_4group:
-            st.metric("Plant Total Yield", f"{yield_energy_df_4group['Total Yield (kg CO2)'].sum():.1f} kg CO2")
-        with ye_metric_col2_4group:
-            st.metric("Plant Total Energy", f"{yield_energy_df_4group['Total Energy (kWh)'].sum():.1f} kWh")
-
-        st.markdown("### Pair Utilisation & Idle Time")
-        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        util_df_4group = _pair_utilization(adv_schedule_4group, PAIRS_4GROUP, TOTAL_MINUTES_ADV)
-        st.dataframe(util_df_4group, use_container_width=True, hide_index=True)
-        _draw_idle_chart(util_df_4group, "Idle Time per Pair — 4-Group Configuration")
-
-        st.session_state["process_comparison"]["Advanced Interleaved (4-Group)"] = {
-            "Total Cycles": int(yield_energy_df_4group["Complete Cycles"].sum()),
-            "Total Yield (kg CO2)": float(yield_energy_df_4group["Total Yield (kg CO2)"].sum()),
-            "Total Energy (kWh)": float(yield_energy_df_4group["Total Energy (kWh)"].sum()),
-        }
 
         st.markdown("## 4-4-4-4 Configuration")
         st.markdown("### Complete Cycles")
@@ -4081,6 +3898,8 @@ with tab4:
             "Total Cycles": int(yield_energy_df_4x4["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df_4x4["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df_4x4["Total Energy (kWh)"].sum()),
+            "Avg Idle (min)": round(float(util_df_4x4["Idle (min)"].mean()), 1),
+            "Avg Utilisation %": round(float(util_df_4x4["Utilisation %"].mean()), 1),
         }
 
         st.markdown("## 2-2-2-2 (N3/N4) Configuration")
@@ -4111,6 +3930,8 @@ with tab4:
             "Total Cycles": int(yield_energy_df_n3n4["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df_n3n4["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df_n3n4["Total Energy (kWh)"].sum()),
+            "Avg Idle (min)": round(float(util_df_n3n4["Idle (min)"].mean()), 1),
+            "Avg Utilisation %": round(float(util_df_n3n4["Utilisation %"].mean()), 1),
         }
 
         gantt_colors = {
@@ -4180,11 +4001,6 @@ with tab4:
         with st.expander("Schedule Data (6-5-5 Configuration)"):
             st.dataframe(adv_schedule_655, use_container_width=True, hide_index=True)
 
-        st.markdown("### Advanced Interleaved Gantt Chart (4-Group Configuration)")
-        _draw_advanced_gantt(adv_schedule_4group, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 4-Group Configuration")
-        with st.expander("Schedule Data (4-Group Configuration)"):
-            st.dataframe(adv_schedule_4group, use_container_width=True, hide_index=True)
-
         st.markdown("### Advanced Interleaved Gantt Chart (4-4-4-4 Configuration)")
         _draw_advanced_gantt(adv_schedule_4x4, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 4-4-4-4 Configuration")
         with st.expander("Schedule Data (4-4-4-4 Configuration)"):
@@ -4214,7 +4030,7 @@ with tab5:
         "Concurrent (2-2)", "Interleaved (2-2)", "Concurrent (6-6)", "Interleaved (6-6)",
         "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)",
         "Advanced Interleaved (6-5-5)",
-        "Advanced Interleaved (4-Group)", "Advanced Interleaved (4-4-4-4)",
+        "Advanced Interleaved (4-4-4-4)",
         "Advanced Interleaved (2-2-2-2 N3/N4)",
     ]
     PROCESS_COLORS = {
@@ -4229,7 +4045,6 @@ with tab5:
         "Advanced Interleaved (6-6-4)": "#2ECC71",
         "Advanced Interleaved (8-4-4)": "#F39C12",
         "Advanced Interleaved (6-5-5)": "#D35400",
-        "Advanced Interleaved (4-Group)": "#9B59B6",
         "Advanced Interleaved (4-4-4-4)": "#1ABC9C",
         "Advanced Interleaved (2-2-2-2 N3/N4)": "#2C7DA0",
     }
@@ -4286,3 +4101,46 @@ with tab5:
         plt.tight_layout()
         st.pyplot(fig_bar)
         plt.close(fig_bar)
+
+        st.markdown("### Idle Time Summary")
+        st.caption(
+            "Average Idle (min) and Utilisation % across the day for each process — per module for "
+            "Full Schedule Analysis, per pair for Advanced Interleaved (that's the finest-grained unit "
+            "each scheduler tracks). Idle = Operating Period − Active (any phase); Cooling and "
+            "Repressurization count as busy, not idle."
+        )
+        idle_available = [p for p in available_processes if "Avg Idle (min)" in comparison[p]]
+        idle_stale = [p for p in available_processes if "Avg Idle (min)" not in comparison[p]]
+        if idle_stale:
+            st.info(
+                "Re-click Generate for: " + ", ".join(idle_stale) +
+                " to include them here (idle time wasn't recorded the last time they ran)."
+            )
+        if idle_available:
+            idle_df = pd.DataFrame([
+                {
+                    "Process": p,
+                    "Avg Idle (min)": comparison[p]["Avg Idle (min)"],
+                    "Avg Utilisation %": comparison[p]["Avg Utilisation %"],
+                }
+                for p in idle_available
+            ])
+            st.dataframe(idle_df, use_container_width=True, hide_index=True)
+
+            fig_idle, ax_idle = plt.subplots(figsize=(8, 5))
+            bars_idle = ax_idle.bar(
+                idle_available, [comparison[p]["Avg Idle (min)"] for p in idle_available],
+                color=[PROCESS_COLORS[p] for p in idle_available], edgecolor="black", alpha=0.9,
+            )
+            for bar in bars_idle:
+                ax_idle.annotate(
+                    f"{bar.get_height():,.1f}",
+                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    ha="center", va="bottom", fontsize=10,
+                )
+            ax_idle.set_title("Average Idle Time (min) by Process")
+            ax_idle.set_ylabel("Avg Idle (min)")
+            plt.setp(ax_idle.get_xticklabels(), rotation=45, ha="right")
+            plt.tight_layout()
+            st.pyplot(fig_idle)
+            plt.close(fig_idle)
