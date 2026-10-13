@@ -242,6 +242,15 @@ def _format_yield_formula(formula):
         parts.append(module if weight == 1 else f"{module} × {weight:g}")
     return " + ".join(parts)
 
+def _format_source(value):
+    """A Duration/Energy source is usually a single real combo string (rendered
+    via _format_module_combo), but can also be a weighted list like Yield's
+    formulas, for a pair with no single real combo of its own that instead
+    averages/sums two or more other real Modules. Renders either form."""
+    if isinstance(value, str):
+        return _format_module_combo(value)
+    return _format_yield_formula(value)
+
 def module_mapping_table(pairs, duration_module_map, energy_module_map, yield_formula_map, represents_map=None):
     """Per-pair table showing which real Module combination sources that pair's
     phase Duration, Energy per Cycle, and Yield per Cycle — i.e. how modules
@@ -255,8 +264,8 @@ def module_mapping_table(pairs, duration_module_map, energy_module_map, yield_fo
         row = {"Pair": pair}
         if represents_map is not None:
             row["Represents"] = represents_map.get(pair, "Same as Duration Source")
-        row["Duration Source"] = _format_module_combo(duration_module_map[pair])
-        row["Energy Source"] = _format_module_combo(energy_module_map[pair])
+        row["Duration Source"] = _format_source(duration_module_map[pair])
+        row["Energy Source"] = _format_source(energy_module_map[pair])
         row["Yield Source (weighted)"] = _format_yield_formula(yield_formula_map[pair])
         rows.append(row)
     return pd.DataFrame(rows)
@@ -284,15 +293,25 @@ def physical_pairing_table(pairs, physical_modules_map):
     return pd.DataFrame(rows)
 
 def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
-    """Return {pair: (avg eTotal kWh, avg BAG CO2 kg)}. Energy per Cycle comes from
-    each pair's single matching Module (energy_module_map). Yield per Cycle instead
-    comes from a weighted sum of one or more Module averages (yield_formula_map,
-    e.g. {"Group A": [("N1N2N3-M1n3", 1), ("N3-M2n4", 1)]}). A pair missing from
-    either mapping gets 0.0 for that value."""
+    """Return {pair: (avg eTotal kWh, avg BAG CO2 kg)}. Energy per Cycle normally
+    comes from each pair's single matching Module (energy_module_map), but a
+    pair's value can also be a weighted list like [("N3-M2n4", 1), ("N4-M2n4", 1)]
+    (same shape as a Yield formula) when no single real combo covers that pair —
+    this sums the listed modules' own Energy averages, weighted, same as Yield.
+    Yield per Cycle always comes from a weighted sum of one or more Module
+    averages (yield_formula_map, e.g. {"Group A": [("N1N2N3-M1n3", 1),
+    ("N3-M2n4", 1)]}). A pair missing from either mapping gets 0.0 for that value."""
     plant_cycles_df = _plant_cycles_df()
     defaults = {}
     for pair in pairs:
-        energy, _ = _module_average(plant_cycles_df, energy_module_map.get(pair))
+        energy_source = energy_module_map.get(pair)
+        if isinstance(energy_source, str) or energy_source is None:
+            energy, _ = _module_average(plant_cycles_df, energy_source)
+        else:
+            energy = sum(
+                weight * _module_average(plant_cycles_df, module)[0]
+                for module, weight in energy_source
+            )
         yield_total = 0.0
         for module, weight in yield_formula_map.get(pair, []):
             _, co2 = _module_average(plant_cycles_df, module)
@@ -362,12 +381,26 @@ def _stage_timestamps_df():
 
 # The log has no Repressurization column at all, so that phase always keeps
 # whatever value is already in the table (originally defaulted to 5 minutes).
+def _phase_averages_for_module(stage_df, module):
+    """{phase: avg minutes} for one Module's rows, or {} if there are none."""
+    subset = stage_df[stage_df["Module"] == module] if module else stage_df.iloc[0:0]
+    if len(subset) == 0:
+        return {}
+    return {
+        phase: float(subset[cols].sum(axis=1).mean())
+        for phase, cols in STAGE_PHASE_COLUMNS.items()
+    }
+
 def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     """Return {pair: {phase: avg minutes}} for the 6 phases in STAGE_PHASE_COLUMNS,
     sourced from each pair's matching Module rows (pair_module_map, default
     PAIR_PLANT_MODULE) in carbonnest_stage_timestamps.csv. A pair with a missing
     file/module/phase simply has no entry for it — callers should fall back to
-    their own default."""
+    their own default. A pair's map value can also be a weighted list like
+    [("N3-M2n4", 1), ("N4-M2n4", 1)] (same shape as a Yield formula) when no
+    single real combo covers that pair — this averages (not sums) each listed
+    module's own phase durations, weighted, since Duration represents a typical
+    cycle's timing rather than a combined total."""
     pair_module_map = pair_module_map if pair_module_map is not None else PAIR_PLANT_MODULE
     stage_df = _stage_timestamps_df()
     if stage_df is None:
@@ -375,14 +408,24 @@ def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
 
     defaults = {}
     for pair in pairs:
-        module = pair_module_map.get(pair)
-        subset = stage_df[stage_df["Module"] == module] if module else stage_df.iloc[0:0]
-        if len(subset) == 0:
-            defaults[pair] = {}
+        source = pair_module_map.get(pair)
+        if isinstance(source, str) or source is None:
+            phase_avgs = _phase_averages_for_module(stage_df, source)
+            defaults[pair] = {phase: round(v, 1) for phase, v in phase_avgs.items()}
             continue
-        defaults[pair] = {
-            phase: round(float(subset[cols].sum(axis=1).mean()), 1)
-            for phase, cols in STAGE_PHASE_COLUMNS.items()
+        # Weighted average across multiple real modules.
+        total_weight = sum(weight for _, weight in source)
+        combined = {}
+        missing_any = False
+        for module, weight in source:
+            phase_avgs = _phase_averages_for_module(stage_df, module)
+            if not phase_avgs:
+                missing_any = True
+                break
+            for phase, value in phase_avgs.items():
+                combined[phase] = combined.get(phase, 0.0) + weight * value
+        defaults[pair] = {} if missing_any or total_weight == 0 else {
+            phase: round(value / total_weight, 1) for phase, value in combined.items()
         }
     return defaults
 
@@ -440,7 +483,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; Group A's Duration/Energy/Yield all come from N3N4-M1n3's own real average now that Nelion 4 is recorded, Group B's Duration/Energy still come from N2N3-M1n3 as the closest-size proxy while Yield sums N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — Duration/Energy from N1N2N3-M1n3's own real average as the closest-size proxy, Yield from a weighted sum of N3 and N2's same-type real averages)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; now that Nelion 4 is recorded, both groups' Duration and Energy come from N3N4-M1n3's own real average — Group A's exact match, and the closest real 4-module N3+N4 reading available for Group B, which has no recorded N3N4-M2n4 combo of its own — while Yield stays module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — Duration/Energy from N1N2N3-M1n3's own real average as the closest-size proxy, Yield from a weighted sum of N3 and N2's same-type real averages)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -1412,13 +1455,15 @@ with tab3:
     # comparison. Group A = N3&N4's M1&M3, Group B = N3&N4's M2&M4. Now that
     # Nelion 4 has its own recorded cycles, Group A's exact combination (N3N4-M1n3)
     # is itself directly recorded, so Duration, Energy and Yield all come straight
-    # from that real average. Group B's combination still isn't recorded as one
-    # combined reading, so its Phase durations and Energy per Cycle come from
-    # N2N3-M1n3's own real average instead (an actual 4-module combination, the
-    # closest size match); Yield per Cycle instead sums N3-M2n4's and N4-M2n4's
-    # own real per-module averages. Shares the Operating Period and
-    # Evacuation/Cooling behavior checkboxes with the 8-8 config above, since
-    # those are plant-wide settings.
+    # from that real average. There's no equivalent recorded N3N4-M2n4 combo for
+    # Group B, so its Duration and Energy per Cycle borrow Group A's real
+    # N3N4-M1n3 data too — an actual measured 4-module N3+N4 cycle, just not the
+    # exact M2/M4 position type, still closer than anything not involving both
+    # Nelion 3 and Nelion 4. Yield per Cycle instead stays module-type-matched:
+    # the weighted sum of N3-M2n4's and N4-M2n4's own real per-module averages,
+    # since Yield is the figure most sensitive to M1n3- vs M2n4-type behavior.
+    # Shares the Operating Period and Evacuation/Cooling behavior checkboxes
+    # with the 8-8 config above, since those are plant-wide settings.
     st.markdown("### 4-4 Configuration")
     st.caption(
         "A second, smaller full-schedule analysis: an 8-module plant split into two "
@@ -1427,21 +1472,22 @@ with tab3:
         "comparison. Now that Nelion 4 has its own recorded cycles, Group A's exact "
         "combination is itself directly recorded (N3N4-M1n3), so its Duration, Energy "
         "and Yield all come straight from that real average — no proxy or doubling. "
-        "Group B's combination (N3 & N4's M2/M4) still isn't recorded as one combined "
-        "reading, so its Phase durations and Energy per Cycle come from N2N3-M1n3's "
-        "own real average (the closest real 4-module combination), while Yield per "
-        "Cycle sums N3-M2n4's and N4-M2n4's own real per-module averages."
+        "There's no equivalent recorded N3N4-M2n4 combo for Group B, so its Duration "
+        "and Energy per Cycle borrow Group A's real N3N4-M1n3 data too, while Yield "
+        "per Cycle stays module-type-matched: the weighted sum of N3-M2n4's and "
+        "N4-M2n4's own real averages."
     )
     TAB3_44_TOTAL_MODULES = 8
     MODULES_44 = list(range(1, TAB3_44_TOTAL_MODULES + 1))
     GROUP_OF_44 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_44}
-    TAB3_44_MODULE_MAP = {"A": "N3N4-M1n3", "B": "N2N3-M1n3"}
+    TAB3_44_MODULE_MAP = {"A": "N3N4-M1n3", "B": "N3N4-M1n3"}
     TAB3_44_YIELD_FORMULA = {"A": [("N3N4-M1n3", 1)], "B": [("N3-M2n4", 1), ("N4-M2n4", 1)]}
-    # Group A's real physical modules now match its N3N4-M1n3 source exactly.
-    # Group B's don't (N2N3-M1n3 is N2 & N3's M1/M3; Group B is N3 & N4's M2/M4) —
-    # physical composition below.
+    # Group A's real physical modules match its N3N4-M1n3 source exactly. Group
+    # B's don't — its Duration/Energy borrow Group A's N3N4-M1n3 combo since
+    # there's no recorded N3N4-M2n4 equivalent, but its Yield stays sourced from
+    # the module-type-matched N3-M2n4 + N4-M2n4 sum — physical composition below.
     REPRESENTS_TAB3_44 = {
-        "B": "N3-M2, N3-M4, N4-M2, N4-M4 (Duration/Energy not directly recorded; Yield is)",
+        "B": "N3-M2, N3-M4, N4-M2, N4-M4 (Duration/Energy mirror Group A's N3N4-M1n3; Yield is N3-M2n4 + N4-M2n4)",
     }
     PAIR_PHYSICAL_MODULES_TAB3_44 = {
         "A": ["N3-M1", "N3-M3", "N4-M1", "N4-M3"],
@@ -1513,8 +1559,9 @@ with tab3:
 
     default_energy_yield_44 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA)
     st.caption(
-        f"Group A's Energy and Yield come from N3N4-M1n3's own real average; Group B's Energy "
-        f"comes from N2N3-M1n3's real average and its Yield sums N3-M2n4's and N4-M2n4's real "
+        f"Both groups' Energy comes from N3N4-M1n3's own real average (Group B has no "
+        f"recorded N3N4-M2n4 combo of its own); Group A's Yield also comes from "
+        f"N3N4-M1n3, while Group B's Yield sums N3-M2n4's and N4-M2n4's own real "
         f"averages: {default_energy_yield_44}. Edit per pair if a pair's real output differs."
     )
     ENERGY_YIELD_TAB3_44_VERSION = 1
