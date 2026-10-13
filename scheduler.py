@@ -116,34 +116,29 @@ PAIR_PHYSICAL_MODULES_4X4 = {
 # covering only Nelion 3 and Nelion 4 (8 of 16 modules) instead of the full
 # plant. Grouped by module TYPE rather than by Nelion: Group A = N3's M1&M3,
 # Group B = N4's M1&M3, Group C = N3's M2&M4, Group D = N4's M2&M4.
-# N3-M1n3 and N3-M2n4 both have their own real data (Group A and C use it
-# directly, no proxy needed); N4-M1n3 and N4-M2n4 have no recorded cycles at
-# all, so Group B mirrors Group A's real N3-M1n3 data and Group D mirrors
-# Group C's real N3-M2n4 data — same module TYPE, just a different Nelion,
-# and since every group is already a genuine 2-module pair (unlike 4-4-4-4's
-# 4-module groups), no multiplier is needed anywhere. Adsorption overlap is
-# unrestricted for all 4 pairs, same as 4-4-4-4 above.
+# All four groups now have their own real recorded cycles (Nelion 4 was
+# commissioned and both carbonnest_plant_cycles.csv and
+# carbonnest_stage_timestamps.csv were updated with N4-M1n3/N4-M2n4 data), so
+# each group sources Duration, Energy and Yield directly from its own matching
+# Module — no mirroring across Nelions, and since every group is already a
+# genuine 2-module pair (unlike 4-4-4-4's 4-module groups), no multiplier is
+# needed anywhere. Adsorption overlap is unrestricted for all 4 pairs, same as
+# 4-4-4-4 above.
 PAIRS_N3N4 = ["Group A", "Group B", "Group C", "Group D"]
 PAIR_MODULE_N3N4 = {
     "Group A": "N3-M1n3",
-    "Group B": "N3-M1n3",
+    "Group B": "N4-M1n3",
     "Group C": "N3-M2n4",
-    "Group D": "N3-M2n4",
+    "Group D": "N4-M2n4",
 }
 PAIR_YIELD_FORMULA_N3N4 = {
     "Group A": [("N3-M1n3", 1)],
-    "Group B": [("N3-M1n3", 1)],
+    "Group B": [("N4-M1n3", 1)],
     "Group C": [("N3-M2n4", 1)],
-    "Group D": [("N3-M2n4", 1)],
+    "Group D": [("N4-M2n4", 1)],
 }
-# Group A and C's real modules match their source combo exactly; Group B and
-# D each represent a different physical 2-module combination (on Nelion 4)
-# than the one they borrow real averages from (Nelion 4 has no recorded
-# cycles of its own at all).
-REPRESENTS_N3N4 = {
-    "Group B": "N4-M1, N4-M3 (not directly recorded — mirrors N3-M1n3)",
-    "Group D": "N4-M2, N4-M4 (not directly recorded — mirrors N3-M2n4)",
-}
+# Every group's physical modules now match its data source combo exactly — no
+# REPRESENTS overrides needed (see module_mapping_table's represents_map arg).
 # The actual physical desorption grouping for 2-2-2-2 (N3/N4) — a partition of
 # only Nelion 3 and Nelion 4's 8 modules (N1 and N2 aren't part of this
 # configuration at all).
@@ -445,7 +440,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4, Duration/Energy from N2N3-M1n3, Yield from N3-M1n3/N3-M2n4 doubled), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — Duration/Energy from N1N2N3-M1n3's own real average as the closest-size proxy, Yield from a weighted sum of N3 and N2's same-type real averages)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; Group A's Duration/Energy/Yield all come from N3N4-M1n3's own real average now that Nelion 4 is recorded, Group B's Duration/Energy still come from N2N3-M1n3 as the closest-size proxy while Yield sums N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — Duration/Energy from N1N2N3-M1n3's own real average as the closest-size proxy, Yield from a weighted sum of N3 and N2's same-type real averages)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -459,7 +454,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
 - Five configurations are compared side by side, grouped into two families:
   - **3-Pair Configurations** (original Adsorption-overlap rule: one privileged pair can overlap Adsorption with the other two, but those two cannot overlap each other): 6-6-4 and 8-4-4 (different module-to-pair groupings), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield)
-  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: Group A/C use N3-M1n3/N3-M2n4's own real data directly, Group B/D mirror the same two real sources for Nelion 4, which has no recorded cycles of its own)
+  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: now that Nelion 4 has its own recorded cycles, every group sources Duration, Energy and Yield directly from its own matching Module — Group A/C from N3-M1n3/N3-M2n4, Group B/D from N4-M1n3/N4-M2n4 — with no mirroring across Nelions)
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
@@ -1414,37 +1409,39 @@ with tab3:
     # === "4-4" Configuration: a second, separate analysis ===
     # An 8-module plant split into two 4-module pairs (vs. the 16-module 8-8 split
     # above), run through the same Concurrent/Interleaved engine for side-by-side
-    # comparison. Group A = N3&N4's M1&M3, Group B = N3&N4's M2&M4. Neither
-    # 4-module combination is itself recorded, so Phase durations AND Energy per
-    # Cycle both come from N2N3-M1n3's own real average instead (an actual
-    # 4-module combination, the closest size match); Yield per Cycle instead uses
-    # each group's own module-type real Yield DOUBLED — N3-M1n3 for Group A,
-    # N3-M2n4 for Group B — since N3's real combos are only 2 modules each, half
-    # of this pair's 4. Shares the Operating Period and Evacuation/Cooling
-    # behavior checkboxes with the 8-8 config above, since those are plant-wide
-    # settings.
+    # comparison. Group A = N3&N4's M1&M3, Group B = N3&N4's M2&M4. Now that
+    # Nelion 4 has its own recorded cycles, Group A's exact combination (N3N4-M1n3)
+    # is itself directly recorded, so Duration, Energy and Yield all come straight
+    # from that real average. Group B's combination still isn't recorded as one
+    # combined reading, so its Phase durations and Energy per Cycle come from
+    # N2N3-M1n3's own real average instead (an actual 4-module combination, the
+    # closest size match); Yield per Cycle instead sums N3-M2n4's and N4-M2n4's
+    # own real per-module averages. Shares the Operating Period and
+    # Evacuation/Cooling behavior checkboxes with the 8-8 config above, since
+    # those are plant-wide settings.
     st.markdown("### 4-4 Configuration")
     st.caption(
         "A second, smaller full-schedule analysis: an 8-module plant split into two "
         "4-module pairs — Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4 — "
         "run through the same Concurrent/Interleaved engine for side-by-side "
-        "comparison. Neither 4-module combination is itself recorded, so Phase "
-        "durations and Energy per Cycle both come from N2N3-M1n3's own real "
-        "average (the closest real 4-module combination); Yield per Cycle instead "
-        "uses each group's own module-type real Yield DOUBLED — N3-M1n3 for Group "
-        "A, N3-M2n4 for Group B — since N3's real combos are only 2 modules each."
+        "comparison. Now that Nelion 4 has its own recorded cycles, Group A's exact "
+        "combination is itself directly recorded (N3N4-M1n3), so its Duration, Energy "
+        "and Yield all come straight from that real average — no proxy or doubling. "
+        "Group B's combination (N3 & N4's M2/M4) still isn't recorded as one combined "
+        "reading, so its Phase durations and Energy per Cycle come from N2N3-M1n3's "
+        "own real average (the closest real 4-module combination), while Yield per "
+        "Cycle sums N3-M2n4's and N4-M2n4's own real per-module averages."
     )
     TAB3_44_TOTAL_MODULES = 8
     MODULES_44 = list(range(1, TAB3_44_TOTAL_MODULES + 1))
     GROUP_OF_44 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_44}
-    TAB3_44_MODULE_MAP = {"A": "N2N3-M1n3", "B": "N2N3-M1n3"}
-    TAB3_44_YIELD_FORMULA = {"A": [("N3-M1n3", 2)], "B": [("N3-M2n4", 2)]}
-    # Neither group's real physical modules match the N2N3-M1n3 source they
-    # borrow Duration/Energy from (N2N3-M1n3 is N2 & N3's M1/M3; these groups are
-    # N3 & N4's own M1/M3 and M2/M4 respectively) — physical composition below.
+    TAB3_44_MODULE_MAP = {"A": "N3N4-M1n3", "B": "N2N3-M1n3"}
+    TAB3_44_YIELD_FORMULA = {"A": [("N3N4-M1n3", 1)], "B": [("N3-M2n4", 1), ("N4-M2n4", 1)]}
+    # Group A's real physical modules now match its N3N4-M1n3 source exactly.
+    # Group B's don't (N2N3-M1n3 is N2 & N3's M1/M3; Group B is N3 & N4's M2/M4) —
+    # physical composition below.
     REPRESENTS_TAB3_44 = {
-        "A": "N3-M1, N3-M3, N4-M1, N4-M3 (not directly recorded)",
-        "B": "N3-M2, N3-M4, N4-M2, N4-M4 (not directly recorded)",
+        "B": "N3-M2, N3-M4, N4-M2, N4-M4 (Duration/Energy not directly recorded; Yield is)",
     }
     PAIR_PHYSICAL_MODULES_TAB3_44 = {
         "A": ["N3-M1", "N3-M3", "N4-M1", "N4-M3"],
@@ -1516,8 +1513,9 @@ with tab3:
 
     default_energy_yield_44 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA)
     st.caption(
-        f"Energy per Cycle uses N1N2-M1n3's own real average; Yield per Cycle uses N3-M2n4's real "
-        f"Yield doubled: {default_energy_yield_44}. Edit per pair if a pair's real output differs."
+        f"Group A's Energy and Yield come from N3N4-M1n3's own real average; Group B's Energy "
+        f"comes from N2N3-M1n3's real average and its Yield sums N3-M2n4's and N4-M2n4's real "
+        f"averages: {default_energy_yield_44}. Edit per pair if a pair's real output differs."
     )
     ENERGY_YIELD_TAB3_44_VERSION = 1
     get_versioned_default_table(
@@ -3361,22 +3359,21 @@ with tab4:
         "A second 4-equal-group configuration, covering only Nelion 3 and Nelion 4 (8 of 16 "
         "modules) instead of the full plant, grouped by module type rather than by Nelion: "
         "Group A = N3's M1/M3, Group B = N4's M1/M3, Group C = N3's M2/M4, Group D = N4's "
-        "M2/M4. Group A and Group C use N3-M1n3 and N3-M2n4's own real averages directly — "
-        "no proxy needed. Nelion 4 has no recorded cycles at all, so Group B mirrors Group "
-        "A's real N3-M1n3 data and Group D mirrors Group C's real N3-M2n4 data; since every "
-        "group here is already a genuine 2-module pair, no multiplier is applied anywhere. "
-        "Adsorption overlap is unrestricted for all 4 pairs."
+        "M2/M4. Nelion 4 has since been commissioned and now has its own recorded cycles, so "
+        "every group sources Duration, Energy and Yield directly from its own matching Module "
+        "average — no proxy or mirroring needed. Since every group here is already a genuine "
+        "2-module pair, no multiplier is applied anywhere. Adsorption overlap is unrestricted "
+        "for all 4 pairs."
     )
     st.markdown("#### Physical Module Pairing")
     st.caption("Which of Nelion 3 and Nelion 4's 8 real modules are grouped together for desorption in this configuration.")
     st.dataframe(physical_pairing_table(PAIRS_N3N4, PAIR_PHYSICAL_MODULES_N3N4), use_container_width=True, hide_index=True)
 
     st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield.")
     st.dataframe(
         module_mapping_table(
             PAIRS_N3N4, PAIR_MODULE_N3N4, PAIR_MODULE_N3N4, PAIR_YIELD_FORMULA_N3N4,
-            represents_map=REPRESENTS_N3N4,
         ),
         use_container_width=True, hide_index=True,
     )
