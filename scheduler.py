@@ -483,7 +483,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; now that Nelion 4 is recorded, both groups' Duration and Energy come from N3N4-M1n3's own real average — Group A's exact match, and the closest real 4-module N3+N4 reading available for Group B, which has no recorded N3N4-M2n4 combo of its own — while Yield stays module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — Duration/Energy from N1N2N3-M1n3's own real average as the closest-size proxy, Yield from a weighted sum of N3 and N2's same-type real averages)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; now that Nelion 4 is recorded, both groups' Duration and Energy come from N3N4-M1n3's own real average — Group A's exact match, and the closest real 4-module N3+N4 reading available for Group B, which has no recorded N3N4-M2n4 combo of its own — while Yield stays module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups share the same sourcing: Duration from N3N4-M1n3's own real average alone, Energy and Yield from N3N4-M1n3 + N4-M1n3's own real averages summed)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -1719,40 +1719,39 @@ with tab3:
 
     # === "6-6" Configuration: a fourth, separate analysis ===
     # A 12-module plant split into two 6-module pairs — Group A = N2&N3&N4's
-    # M1&M3, Group B = N2&N3&N4's M2&M4 (no N1). Neither 6-module combination
-    # is itself recorded, so Phase durations AND Energy per Cycle both come
-    # from N1N2N3-M1n3's own real average instead — the closest real 6-module
-    # combination in size (same proxy pattern as the 4-4 config's N2N3-M1n3).
-    # Yield per Cycle instead uses a weighted sum per pair, each built from BAG
-    # CO2 data: Group A = N3-M1n3 x2 + N2-M1n3, Group B = N3-M2n4 x2 +
-    # N2-M2n4 (the M2n4-type mirror of Group A's formula) — unchanged from
-    # before. Shares the Operating Period and Evacuation/Cooling behavior
-    # checkboxes with the 8-8 config above, since those are plant-wide settings.
+    # M1&M3, Group B = N2&N3&N4's M2&M4 (no N1). Neither 6-module combination is
+    # itself recorded, so both groups share the same sourcing per instruction:
+    # Phase durations come from N3N4-M1n3's own real average alone (the real
+    # 4-module N3+N4 combo); Energy and Yield per Cycle come from N3N4-M1n3 +
+    # N4-M1n3's own real averages summed. Shares the Operating Period and
+    # Evacuation/Cooling behavior checkboxes with the 8-8 config above, since
+    # those are plant-wide settings.
     st.markdown("### 6-6 Configuration")
     st.caption(
         "A fourth full-schedule analysis: a 12-module plant split into two "
         "6-module pairs — Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's "
         "M2/M4 (no N1) — run through the same Concurrent/Interleaved engine for "
         "side-by-side comparison. Neither 6-module combination is itself "
-        "recorded, so Phase durations and Energy per Cycle both come from "
-        "N1N2N3-M1n3's own real average instead (the closest real 6-module "
-        "combination in size). Yield per Cycle instead uses a weighted sum per "
-        "pair: Group A = N3-M1n3 x2 + N2-M1n3, Group B = N3-M2n4 x2 + "
-        "N2-M2n4 — the M2n4-type mirror of Group A's formula."
+        "recorded, so both groups share the same sourcing: Phase durations come "
+        "from N3N4-M1n3's own real average alone, while Energy and Yield per "
+        "Cycle come from N3N4-M1n3 + N4-M1n3's own real averages summed."
     )
     TAB3_66_TOTAL_MODULES = 12
     MODULES_66 = list(range(1, TAB3_66_TOTAL_MODULES + 1))
     GROUP_OF_66 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_66}
-    TAB3_66_MODULE_MAP = {"A": "N1N2N3-M1n3", "B": "N1N2N3-M1n3"}
-    TAB3_66_YIELD_FORMULA = {
-        "A": [("N3-M1n3", 2), ("N2-M1n3", 1)],
-        "B": [("N3-M2n4", 2), ("N2-M2n4", 1)],
+    TAB3_66_DURATION_MODULE_MAP = {"A": "N3N4-M1n3", "B": "N3N4-M1n3"}
+    # Energy and Yield per Cycle share the same formula, same for both groups.
+    TAB3_66_ENERGY_YIELD_FORMULA = {
+        "A": [("N3N4-M1n3", 1), ("N4-M1n3", 1)],
+        "B": [("N3N4-M1n3", 1), ("N4-M1n3", 1)],
     }
-    # Neither group's real physical modules (on N2/N3/N4) match the N1N2N3-M1n3
-    # source they borrow Duration/Energy from (which includes N1, not N4).
+    TAB3_66_YIELD_FORMULA = TAB3_66_ENERGY_YIELD_FORMULA
+    # Neither group's real physical modules (on N2/N3/N4) match the N3N4-M1n3 +
+    # N4-M1n3 sources they're built from (no N2 modules, and Group B is M2/M4
+    # type while both sources are M1n3-type).
     REPRESENTS_TAB3_66 = {
-        "A": "N2-M1, N2-M3, N3-M1, N3-M3, N4-M1, N4-M3 (not directly recorded)",
-        "B": "N2-M2, N2-M4, N3-M2, N3-M4, N4-M2, N4-M4 (not directly recorded)",
+        "A": "N2-M1, N2-M3, N3-M1, N3-M3, N4-M1, N4-M3 (sourced from N3N4-M1n3 + N4-M1n3)",
+        "B": "N2-M2, N2-M4, N3-M2, N3-M4, N4-M2, N4-M4 (sourced from N3N4-M1n3 + N4-M1n3)",
     }
     PAIR_PHYSICAL_MODULES_TAB3_66 = {
         "A": ["N2-M1", "N2-M3", "N3-M1", "N3-M3", "N4-M1", "N4-M3"],
@@ -1766,7 +1765,7 @@ with tab3:
     st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
     st.dataframe(
         module_mapping_table(
-            ["A", "B"], TAB3_66_MODULE_MAP, TAB3_66_MODULE_MAP, TAB3_66_YIELD_FORMULA,
+            ["A", "B"], TAB3_66_DURATION_MODULE_MAP, TAB3_66_ENERGY_YIELD_FORMULA, TAB3_66_YIELD_FORMULA,
             represents_map=REPRESENTS_TAB3_66,
         ),
         use_container_width=True, hide_index=True,
@@ -1794,8 +1793,8 @@ with tab3:
             key="shared_purge_heat_co2_cap_66",
         )
 
-    default_phase_durations_66 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_66_MODULE_MAP)
-    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N1N2N3-M1n3 cycle average.")
+    default_phase_durations_66 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_66_DURATION_MODULE_MAP)
+    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N3N4-M1n3 cycle average.")
     PHASE_DURATIONS_TAB3_66_VERSION = 1
     get_versioned_default_table(
         "phase_durations_tab3_66", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_66_VERSION,
@@ -1822,10 +1821,11 @@ with tab3:
     PHASE_DURATIONS_66 = grp_a_66
     PHASE_DURATIONS_BY_GROUP_66 = {"A": grp_a_66, "B": grp_b_66}
 
-    default_energy_yield_66 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_66_MODULE_MAP, TAB3_66_YIELD_FORMULA)
+    default_energy_yield_66 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_66_ENERGY_YIELD_FORMULA, TAB3_66_YIELD_FORMULA)
     st.caption(
-        f"Energy per Cycle uses N1N2N3-M1n3's own real average; Yield per Cycle uses the weighted "
-        f"sums described above: {default_energy_yield_66}. Edit per pair if a pair's real output differs."
+        f"Energy and Yield per Cycle both come from N3N4-M1n3 + N4-M1n3's own real averages summed, "
+        f"the same for both groups: {default_energy_yield_66}. Edit per pair if a pair's real output "
+        f"differs."
     )
     ENERGY_YIELD_TAB3_66_VERSION = 1
     get_versioned_default_table(
