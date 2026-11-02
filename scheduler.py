@@ -502,7 +502,7 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
 **Tab 5: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across thirteen processes: Concurrent, Interleaved, Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+Compares Total Cycles, Total Yield, and Total Energy across thirteen processes: Concurrent (8-8), Interleaved (8-8), Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
@@ -2737,7 +2737,7 @@ with tab3:
 
     if st.button("Generate Schedule and Analyze"):
         run_and_display_config(
-            "8-8 Configuration", "_88", "",
+            "8-8 Configuration", "_88", " (8-8)",
             MODULES, GROUP_IDS, GROUP_OF,
             PHASE_DURATIONS, PHASE_DURATIONS_BY_GROUP, RESOURCE_LIMITS,
             PAIR_ENERGY_PER_CYCLE_TAB3, PAIR_YIELD_PER_CYCLE_TAB3,
@@ -4077,7 +4077,7 @@ with tab5:
     )
 
     PROCESS_ORDER = [
-        "Concurrent", "Interleaved", "Concurrent (4-4)", "Interleaved (4-4)",
+        "Concurrent (8-8)", "Interleaved (8-8)", "Concurrent (4-4)", "Interleaved (4-4)",
         "Concurrent (2-2)", "Interleaved (2-2)", "Concurrent (6-6)", "Interleaved (6-6)",
         "Advanced Interleaved (6-6-4)", "Advanced Interleaved (8-4-4)",
         "Advanced Interleaved (6-5-5)",
@@ -4085,8 +4085,8 @@ with tab5:
         "Advanced Interleaved (2-2-2-2 N3/N4)",
     ]
     PROCESS_COLORS = {
-        "Concurrent": "#6C5CE7",
-        "Interleaved": "#E07C5E",
+        "Concurrent (8-8)": "#6C5CE7",
+        "Interleaved (8-8)": "#E07C5E",
         "Concurrent (4-4)": "#8E7CF7",
         "Interleaved (4-4)": "#F0A382",
         "Concurrent (2-2)": "#5B4E9E",
