@@ -4318,3 +4318,42 @@ with tab5:
         plt.tight_layout()
         st.pyplot(fig_ann_energy)
         plt.close(fig_ann_energy)
+
+        st.markdown("#### Annual Cost & Levelized Cost")
+        annual_cost_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Annual Energy Cost ($)": round(
+                    comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor * cost_per_kwh, 2
+                ),
+                "Levelized Cost ($/tonne CO2)": (
+                    round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(annual_cost_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "Levelized Cost ($/tonne CO2) is the same figure as in the daily table above — "
+            "annualizing scales Energy and Yield by the same factor (365 × capacity factor), so "
+            "their ratio doesn't change. It's repeated here next to Annual Energy Cost for a "
+            "one-year projection view."
+        )
+        fig_ann_lc, ax_ann_lc = plt.subplots(figsize=(8, 5))
+        ann_lc_values = [levelized_cost_map[p] or 0.0 for p in available_processes]
+        bars_ann_lc = ax_ann_lc.bar(
+            available_processes, ann_lc_values,
+            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
+        )
+        for bar in bars_ann_lc:
+            ax_ann_lc.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_ann_lc.set_title("Levelized Cost ($/tonne CO2) by Process — Annual Projection")
+        ax_ann_lc.set_ylabel("Levelized Cost ($/tonne CO2)")
+        plt.setp(ax_ann_lc.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_ann_lc)
+        plt.close(fig_ann_lc)
