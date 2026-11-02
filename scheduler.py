@@ -4150,31 +4150,6 @@ with tab5:
             "cost only, not a full levelized cost (no capital, labor, or other operating costs included)."
         )
 
-        st.markdown("### CAPEX")
-        st.caption(
-            "Capital expenditure by asset. Not yet allocated to a configuration — edit the values "
-            "below if they change, and once there's a rule for distributing each line across "
-            "configurations it can be folded into the Levelized Cost above."
-        )
-        default_capex_df = pd.DataFrame([
-            {"Item": "Utility skid + Plant", "CAPEX ($)": 374000.00},
-            {"Item": "Nelion 1 + Monolith", "CAPEX ($)": 249451.05},
-            {"Item": "Nelion 2 + Monolith", "CAPEX ($)": 186800.00},
-            {"Item": "Nelion 3 & 4 + Monolith", "CAPEX ($)": 390900.00},
-        ])
-        capex_df = st.data_editor(
-            default_capex_df,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="fixed",
-            key="capex_table_tab5",
-            column_config={
-                "CAPEX ($)": st.column_config.NumberColumn("CAPEX ($)", format="$%.2f"),
-            },
-        )
-        st.caption(f"Total CAPEX: ${capex_df['CAPEX ($)'].sum():,.2f}")
-        st.session_state["capex_table"] = capex_df
-
         st.markdown("### Compare a parameter across processes")
         selected_metric = st.selectbox(
             "Parameter",
@@ -4357,3 +4332,28 @@ with tab5:
         plt.tight_layout()
         st.pyplot(fig_ann_lc)
         plt.close(fig_ann_lc)
+
+        st.markdown("### CAPEX")
+        st.caption(
+            "Capital expenditure by asset. Not yet allocated to a configuration — edit the values "
+            "below if they change, and once there's a rule for distributing each line across "
+            "configurations it can be folded into the Levelized Cost above."
+        )
+        default_capex_df = pd.DataFrame([
+            {"Item": "Utility skid + Plant", "CAPEX ($)": 374000.00},
+            {"Item": "Nelion 1 + Monolith", "CAPEX ($)": 249451.05},
+            {"Item": "Nelion 2 + Monolith", "CAPEX ($)": 186800.00},
+            {"Item": "Nelion 3 & 4 + Monolith", "CAPEX ($)": 390900.00},
+        ])
+        capex_df = st.data_editor(
+            default_capex_df,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            key="capex_table_tab5",
+            column_config={
+                "CAPEX ($)": st.column_config.NumberColumn("CAPEX ($)", format="$%.2f"),
+            },
+        )
+        st.caption(f"Total CAPEX: ${capex_df['CAPEX ($)'].sum():,.2f}")
+        st.session_state["capex_table"] = capex_df
