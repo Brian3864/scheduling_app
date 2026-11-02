@@ -4246,3 +4246,74 @@ with tab5:
             plt.tight_layout()
             st.pyplot(fig_idle)
             plt.close(fig_idle)
+
+        st.markdown("### Annualized Analysis")
+        st.caption(
+            "Scales each process's daily totals (from the schedule above) up to a full year: "
+            "Daily total × 365 days × capacity factor. The capacity factor accounts for planned "
+            "and unplanned downtime, since the plant won't run at the daily-schedule rate every "
+            "day of the year."
+        )
+        capacity_factor = st.number_input(
+            "Capacity factor", min_value=0.0, max_value=1.0, value=0.70, step=0.01,
+            format="%.2f", key="capacity_factor_tab5",
+            help="Fraction of the year the plant effectively runs at the daily-schedule rate (0.70 = 70%).",
+        )
+
+        st.markdown("#### Annual Yield")
+        annual_yield_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Annual Yield (tonnes CO2)": round(
+                    comparison[p]["Total Yield (kg CO2)"] * 365 * capacity_factor / 1000, 1
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(annual_yield_df, use_container_width=True, hide_index=True)
+        fig_ann_yield, ax_ann_yield = plt.subplots(figsize=(8, 5))
+        bars_ann_yield = ax_ann_yield.bar(
+            available_processes, annual_yield_df["Annual Yield (tonnes CO2)"],
+            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
+        )
+        for bar in bars_ann_yield:
+            ax_ann_yield.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_ann_yield.set_title("Annual Yield (tonnes CO2) by Process")
+        ax_ann_yield.set_ylabel("Annual Yield (tonnes CO2)")
+        plt.setp(ax_ann_yield.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_ann_yield)
+        plt.close(fig_ann_yield)
+
+        st.markdown("#### Annual Energy")
+        annual_energy_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Annual Energy (MWh)": round(
+                    comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor / 1000, 1
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(annual_energy_df, use_container_width=True, hide_index=True)
+        fig_ann_energy, ax_ann_energy = plt.subplots(figsize=(8, 5))
+        bars_ann_energy = ax_ann_energy.bar(
+            available_processes, annual_energy_df["Annual Energy (MWh)"],
+            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
+        )
+        for bar in bars_ann_energy:
+            ax_ann_energy.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_ann_energy.set_title("Annual Energy (MWh) by Process")
+        ax_ann_energy.set_ylabel("Annual Energy (MWh)")
+        plt.setp(ax_ann_energy.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_ann_energy)
+        plt.close(fig_ann_energy)
