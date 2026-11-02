@@ -4128,6 +4128,63 @@ with tab5:
             ) if comparison[p]["Total Yield (kg CO2)"] > 0 else None
             for p in available_processes
         }
+
+        # CAPEX amortization, folded into a second Levelized Cost figure. Each process is
+        # mapped to the CAPEX line item(s) for the physical Nelion(s) it actually runs (see
+        # the CAPEX section below for the line items and PAIR_PHYSICAL_MODULES_* /
+        # REPRESENTS_* constants throughout this file for each config's Nelion composition):
+        # 4-4, 2-2 (sourced entirely from N3-M2n4) and 2-2-2-2 (N3/N4) run only Nelion 3 & 4;
+        # 6-6 runs Nelion 2, 3 & 4; 8-8 and the four full-16-module Advanced Interleaved
+        # configs (6-6-4, 8-4-4, 6-5-5, 4-4-4-4) run the whole plant, Utility skid included.
+        # capex_lookup/amortization_years read the CAPEX table/input defined in the CAPEX
+        # section further down this tab — Streamlit keeps a widget's current value in
+        # session_state under its key even when that widget is defined later in the script,
+        # so this works once the app has rendered at least once; first-ever load falls back
+        # to the same defaults the CAPEX table itself starts with.
+        default_capex_items = {
+            "Utility skid + Plant": 374000.00,
+            "Nelion 1 + Monolith": 249451.05,
+            "Nelion 2 + Monolith": 186800.00,
+            "Nelion 3 & 4 + Monolith": 390900.00,
+        }
+        if "capex_table_tab5" in st.session_state:
+            capex_lookup = dict(zip(
+                st.session_state["capex_table_tab5"]["Item"],
+                st.session_state["capex_table_tab5"]["CAPEX ($)"],
+            ))
+        else:
+            capex_lookup = default_capex_items
+        amortization_years = st.session_state.get("capex_amortization_years", 10)
+        FULL_PLANT_CAPEX_ITEMS = [
+            "Utility skid + Plant", "Nelion 1 + Monolith", "Nelion 2 + Monolith", "Nelion 3 & 4 + Monolith",
+        ]
+        CAPEX_ITEMS_BY_PROCESS = {
+            "Concurrent (8-8)": FULL_PLANT_CAPEX_ITEMS,
+            "Interleaved (8-8)": FULL_PLANT_CAPEX_ITEMS,
+            "Concurrent (4-4)": ["Nelion 3 & 4 + Monolith"],
+            "Interleaved (4-4)": ["Nelion 3 & 4 + Monolith"],
+            "Concurrent (2-2)": ["Nelion 3 & 4 + Monolith"],
+            "Interleaved (2-2)": ["Nelion 3 & 4 + Monolith"],
+            "Concurrent (6-6)": ["Nelion 2 + Monolith", "Nelion 3 & 4 + Monolith"],
+            "Interleaved (6-6)": ["Nelion 2 + Monolith", "Nelion 3 & 4 + Monolith"],
+            "Advanced Interleaved (6-6-4)": FULL_PLANT_CAPEX_ITEMS,
+            "Advanced Interleaved (8-4-4)": FULL_PLANT_CAPEX_ITEMS,
+            "Advanced Interleaved (6-5-5)": FULL_PLANT_CAPEX_ITEMS,
+            "Advanced Interleaved (4-4-4-4)": FULL_PLANT_CAPEX_ITEMS,
+            "Advanced Interleaved (2-2-2-2 N3/N4)": ["Nelion 3 & 4 + Monolith"],
+        }
+        annual_capex_map = {
+            p: sum(capex_lookup.get(item, 0.0) for item in CAPEX_ITEMS_BY_PROCESS.get(p, [])) / amortization_years
+            for p in available_processes
+        }
+        levelized_cost_with_capex_map = {
+            p: (
+                (comparison[p]["Total Energy (kWh)"] * cost_per_kwh + annual_capex_map[p] / 365)
+                / (comparison[p]["Total Yield (kg CO2)"] / 1000)
+            ) if comparison[p]["Total Yield (kg CO2)"] > 0 else None
+            for p in available_processes
+        }
+
         comparison_df = pd.DataFrame([
             {
                 "Process": p,
@@ -4141,23 +4198,34 @@ with tab5:
                 "Levelized Cost ($/tonne CO2)": (
                     round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
                 ),
+                "Levelized Cost w/ CAPEX ($/tonne CO2)": (
+                    round(levelized_cost_with_capex_map[p], 2) if levelized_cost_with_capex_map[p] is not None else "—"
+                ),
             }
             for p in available_processes
         ])
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
         st.caption(
             "Levelized Cost = (Total Energy × electricity cost) ÷ (Total Yield in tonnes) — electricity "
-            "cost only, not a full levelized cost (no capital, labor, or other operating costs included)."
+            "cost only, not a full levelized cost. Levelized Cost w/ CAPEX adds each process's share of "
+            f"CAPEX, amortized over {amortization_years:g} years and apportioned to one day "
+            "(Annual CAPEX ÷ 365), before dividing by Total Yield — see the CAPEX section below to edit "
+            "the line items, the amortization period, and which processes draw on which lines."
         )
 
         st.markdown("### Compare a parameter across processes")
         selected_metric = st.selectbox(
             "Parameter",
-            ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)", "Levelized Cost ($/tonne CO2)"],
+            [
+                "Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)",
+                "Levelized Cost ($/tonne CO2)", "Levelized Cost w/ CAPEX ($/tonne CO2)",
+            ],
             key="comparison_metric",
         )
         if selected_metric == "Levelized Cost ($/tonne CO2)":
             values = [levelized_cost_map[p] or 0.0 for p in available_processes]
+        elif selected_metric == "Levelized Cost w/ CAPEX ($/tonne CO2)":
+            values = [levelized_cost_with_capex_map[p] or 0.0 for p in available_processes]
         else:
             values = [comparison[p][selected_metric] for p in available_processes]
         fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
@@ -4295,14 +4363,31 @@ with tab5:
         plt.close(fig_ann_energy)
 
         st.markdown("#### Annual Cost & Levelized Cost")
+        annual_opex_map = {
+            p: comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor * cost_per_kwh
+            for p in available_processes
+        }
+        annual_yield_tonnes_map = {
+            p: comparison[p]["Total Yield (kg CO2)"] * 365 * capacity_factor / 1000
+            for p in available_processes
+        }
+        levelized_cost_with_capex_annual_map = {
+            p: (
+                (annual_opex_map[p] + annual_capex_map[p]) / annual_yield_tonnes_map[p]
+            ) if annual_yield_tonnes_map[p] > 0 else None
+            for p in available_processes
+        }
         annual_cost_df = pd.DataFrame([
             {
                 "Process": p,
-                "Annual Energy Cost ($)": round(
-                    comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor * cost_per_kwh, 2
-                ),
+                "Annual Energy Cost ($)": round(annual_opex_map[p], 2),
+                "Annual CAPEX Amortization ($)": round(annual_capex_map[p], 2),
                 "Levelized Cost ($/tonne CO2)": (
                     round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
+                ),
+                "Levelized Cost w/ CAPEX ($/tonne CO2)": (
+                    round(levelized_cost_with_capex_annual_map[p], 2)
+                    if levelized_cost_with_capex_annual_map[p] is not None else "—"
                 ),
             }
             for p in available_processes
@@ -4311,8 +4396,10 @@ with tab5:
         st.caption(
             "Levelized Cost ($/tonne CO2) is the same figure as in the daily table above — "
             "annualizing scales Energy and Yield by the same factor (365 × capacity factor), so "
-            "their ratio doesn't change. It's repeated here next to Annual Energy Cost for a "
-            "one-year projection view."
+            "their ratio doesn't change. Levelized Cost w/ CAPEX = (Annual Energy Cost + Annual "
+            f"CAPEX Amortization) ÷ Annual Yield in tonnes, with CAPEX amortized over "
+            f"{amortization_years:g} years — see the CAPEX section below for the line items each "
+            "process draws on."
         )
         fig_ann_lc, ax_ann_lc = plt.subplots(figsize=(8, 5))
         ann_lc_values = [levelized_cost_map[p] or 0.0 for p in available_processes]
@@ -4333,11 +4420,30 @@ with tab5:
         st.pyplot(fig_ann_lc)
         plt.close(fig_ann_lc)
 
+        fig_ann_lc_capex, ax_ann_lc_capex = plt.subplots(figsize=(8, 5))
+        ann_lc_capex_values = [levelized_cost_with_capex_annual_map[p] or 0.0 for p in available_processes]
+        bars_ann_lc_capex = ax_ann_lc_capex.bar(
+            available_processes, ann_lc_capex_values,
+            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
+        )
+        for bar in bars_ann_lc_capex:
+            ax_ann_lc_capex.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_ann_lc_capex.set_title("Levelized Cost w/ CAPEX ($/tonne CO2) by Process — Annual Projection")
+        ax_ann_lc_capex.set_ylabel("Levelized Cost w/ CAPEX ($/tonne CO2)")
+        plt.setp(ax_ann_lc_capex.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_ann_lc_capex)
+        plt.close(fig_ann_lc_capex)
+
         st.markdown("### CAPEX")
         st.caption(
-            "Capital expenditure by asset. Not yet allocated to a configuration — edit the values "
-            "below if they change, and once there's a rule for distributing each line across "
-            "configurations it can be folded into the Levelized Cost above."
+            "Capital expenditure by asset, already folded into the Levelized Cost w/ CAPEX figures "
+            "above — edit the values below or the amortization period and both the daily and annual "
+            "tables update."
         )
         default_capex_df = pd.DataFrame([
             {"Item": "Utility skid + Plant", "CAPEX ($)": 374000.00},
@@ -4357,3 +4463,19 @@ with tab5:
         )
         st.caption(f"Total CAPEX: ${capex_df['CAPEX ($)'].sum():,.2f}")
         st.session_state["capex_table"] = capex_df
+
+        st.number_input(
+            "CAPEX amortization period (years)", min_value=1, value=10, step=1,
+            key="capex_amortization_years",
+            help="Each process's CAPEX line item(s) are divided by this many years to get an "
+                 "Annual CAPEX Amortization, which feeds into Levelized Cost w/ CAPEX above.",
+        )
+        st.caption(
+            "CAPEX line(s) used per process — picked by which physical Nelion(s) that process's "
+            "modules actually run (see each config's \"Physical Module Pairing\" table): "
+            "Concurrent/Interleaved (4-4), (2-2) and Advanced Interleaved (2-2-2-2 N3/N4) use "
+            "Nelion 3 & 4 + Monolith only; Concurrent/Interleaved (6-6) use Nelion 2 + Monolith and "
+            "Nelion 3 & 4 + Monolith; Concurrent/Interleaved (8-8) and Advanced Interleaved "
+            "(6-6-4, 8-4-4, 6-5-5, 4-4-4-4) run the full 16-module plant, so they use all four lines "
+            "including Utility skid + Plant."
+        )
