@@ -4112,6 +4112,22 @@ with tab5:
     if not available_processes:
         st.warning("No results yet — generate a schedule in Full Schedule Analysis and/or Advanced Interleaved first.")
     else:
+        cost_per_kwh = st.number_input(
+            "Electricity cost ($ per kWh)", min_value=0.0, value=0.15, step=0.01,
+            help="Used below to convert each process's Total Energy into a Levelized Cost per tonne "
+                 "of CO2. Adjust to your actual electricity tariff.",
+            key="cost_per_kwh_tab5",
+        )
+        # Levelized Cost here is electricity cost only (Total Energy x cost per kWh,
+        # divided by Total Yield in tonnes) — it does not include capital, labor, or
+        # other operating costs, so it's a lower bound, not a full LCOC.
+        levelized_cost_map = {
+            p: (
+                comparison[p]["Total Energy (kWh)"] * cost_per_kwh
+                / (comparison[p]["Total Yield (kg CO2)"] / 1000)
+            ) if comparison[p]["Total Yield (kg CO2)"] > 0 else None
+            for p in available_processes
+        }
         comparison_df = pd.DataFrame([
             {
                 "Process": p,
@@ -4122,18 +4138,28 @@ with tab5:
                     round(comparison[p]["Total Energy (kWh)"] / comparison[p]["Total Yield (kg CO2)"], 3)
                     if comparison[p]["Total Yield (kg CO2)"] > 0 else "—"
                 ),
+                "Levelized Cost ($/tonne CO2)": (
+                    round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
+                ),
             }
             for p in available_processes
         ])
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "Levelized Cost = (Total Energy × electricity cost) ÷ (Total Yield in tonnes) — electricity "
+            "cost only, not a full levelized cost (no capital, labor, or other operating costs included)."
+        )
 
         st.markdown("### Compare a parameter across processes")
         selected_metric = st.selectbox(
             "Parameter",
-            ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)"],
+            ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)", "Levelized Cost ($/tonne CO2)"],
             key="comparison_metric",
         )
-        values = [comparison[p][selected_metric] for p in available_processes]
+        if selected_metric == "Levelized Cost ($/tonne CO2)":
+            values = [levelized_cost_map[p] or 0.0 for p in available_processes]
+        else:
+            values = [comparison[p][selected_metric] for p in available_processes]
         fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
         bars = ax_bar.bar(
             available_processes, values,
