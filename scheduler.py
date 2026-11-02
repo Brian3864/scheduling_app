@@ -4200,6 +4200,7 @@ with tab5:
         ax_bar.set_title(f"{selected_metric} by Process")
         ax_bar.set_ylabel(selected_metric)
         ax_bar.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
+        plt.setp(ax_bar.get_xticklabels(), rotation=45, ha="right")
         plt.tight_layout()
         st.pyplot(fig_bar)
         plt.close(fig_bar)
