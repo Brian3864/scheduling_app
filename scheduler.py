@@ -4112,13 +4112,30 @@ with tab5:
     if not available_processes:
         st.warning("No results yet — generate a schedule in Full Schedule Analysis and/or Advanced Interleaved first.")
     else:
-        cost_per_kwh = st.number_input(
-            "Electricity cost ($ per kWh)", min_value=0.0, value=0.15, step=0.01,
-            help="Used below to convert each process's Total Energy into a Levelized Cost per tonne "
-                 "of CO2. Adjust to your actual electricity tariff.",
-            key="cost_per_kwh_tab5",
-        )
-        # Levelized Cost = (Opex from energy + amortized CAPEX) ÷ Total Yield in tonnes.
+        opex_col1, opex_col2, opex_col3 = st.columns(3)
+        with opex_col1:
+            cost_per_kwh = st.number_input(
+                "Electricity cost ($ per kWh)", min_value=0.0, value=0.15, step=0.01,
+                help="Used below to convert each process's Total Energy into an OPEX line. "
+                     "Adjust to your actual electricity tariff.",
+                key="cost_per_kwh_tab5",
+            )
+        with opex_col2:
+            water_per_cycle_l = st.number_input(
+                "Water use per cycle (litres)", min_value=0.0, value=275.0, step=1.0,
+                help="Litres of water consumed per completed cycle — applied to every "
+                     "configuration's Total Cycles as a second OPEX line alongside energy.",
+                key="water_per_cycle_tab5",
+            )
+        with opex_col3:
+            cost_per_litre = st.number_input(
+                "Water cost ($ per litre)", min_value=0.0, value=32.0 / 5500.0, step=0.0001,
+                format="%.6f",
+                help="Cost per litre of water, derived from $32 per 5.5 m³ (32 / 5500 L ≈ "
+                     "$0.00582/L). Adjust to your actual water tariff.",
+                key="cost_per_litre_tab5",
+            )
+        # Levelized Cost = (OPEX from energy + water + amortized CAPEX) ÷ Total Yield in tonnes.
         # CAPEX: each process is mapped to the CAPEX line item(s) for the physical Nelion(s)
         # it actually runs (see the CAPEX section below for the line items and
         # PAIR_PHYSICAL_MODULES_* / REPRESENTS_* constants throughout this file for each
@@ -4166,9 +4183,17 @@ with tab5:
             p: sum(capex_lookup.get(item, 0.0) for item in CAPEX_ITEMS_BY_PROCESS.get(p, [])) / amortization_years
             for p in available_processes
         }
+        water_opex_map = {
+            p: comparison[p]["Total Cycles"] * water_per_cycle_l * cost_per_litre
+            for p in available_processes
+        }
         levelized_cost_map = {
             p: (
-                (comparison[p]["Total Energy (kWh)"] * cost_per_kwh + annual_capex_map[p] / 365)
+                (
+                    comparison[p]["Total Energy (kWh)"] * cost_per_kwh
+                    + water_opex_map[p]
+                    + annual_capex_map[p] / 365
+                )
                 / (comparison[p]["Total Yield (kg CO2)"] / 1000)
             ) if comparison[p]["Total Yield (kg CO2)"] > 0 else None
             for p in available_processes
@@ -4184,6 +4209,7 @@ with tab5:
                     round(comparison[p]["Total Energy (kWh)"] / comparison[p]["Total Yield (kg CO2)"], 3)
                     if comparison[p]["Total Yield (kg CO2)"] > 0 else "—"
                 ),
+                "Water Cost ($)": round(water_opex_map[p], 2),
                 "Levelized Cost ($/tonne CO2)": (
                     round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
                 ),
@@ -4192,10 +4218,11 @@ with tab5:
         ])
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
         st.caption(
-            "Levelized Cost = (Total Energy × electricity cost + amortized CAPEX apportioned to one "
-            f"day) ÷ Total Yield in tonnes — CAPEX amortized over {amortization_years:g} years "
-            "(Annual CAPEX ÷ 365 for the daily share) — see the CAPEX section below to edit the line "
-            "items, the amortization period, and which processes draw on which lines."
+            "Levelized Cost = (Energy cost + Water cost + amortized CAPEX apportioned to one day) ÷ "
+            f"Total Yield in tonnes. Water cost = Total Cycles × {water_per_cycle_l:g} L/cycle × "
+            f"water cost per litre. CAPEX is amortized over {amortization_years:g} years (Annual "
+            "CAPEX ÷ 365 for the daily share) — see the CAPEX section below to edit the line items, "
+            "the amortization period, and which processes draw on which lines."
         )
 
         st.markdown("### Compare a parameter across processes")
@@ -4343,8 +4370,12 @@ with tab5:
         plt.close(fig_ann_energy)
 
         st.markdown("#### Annual Cost & Levelized Cost")
-        annual_opex_map = {
+        annual_energy_opex_map = {
             p: comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor * cost_per_kwh
+            for p in available_processes
+        }
+        annual_water_opex_map = {
+            p: comparison[p]["Total Cycles"] * 365 * capacity_factor * water_per_cycle_l * cost_per_litre
             for p in available_processes
         }
         annual_yield_tonnes_map = {
@@ -4353,14 +4384,16 @@ with tab5:
         }
         levelized_cost_annual_map = {
             p: (
-                (annual_opex_map[p] + annual_capex_map[p]) / annual_yield_tonnes_map[p]
+                (annual_energy_opex_map[p] + annual_water_opex_map[p] + annual_capex_map[p])
+                / annual_yield_tonnes_map[p]
             ) if annual_yield_tonnes_map[p] > 0 else None
             for p in available_processes
         }
         annual_cost_df = pd.DataFrame([
             {
                 "Process": p,
-                "Annual Energy Cost ($)": round(annual_opex_map[p], 2),
+                "Annual Energy Cost ($)": round(annual_energy_opex_map[p], 2),
+                "Annual Water Cost ($)": round(annual_water_opex_map[p], 2),
                 "Annual CAPEX Amortization ($)": round(annual_capex_map[p], 2),
                 "Levelized Cost ($/tonne CO2)": (
                     round(levelized_cost_annual_map[p], 2) if levelized_cost_annual_map[p] is not None else "—"
@@ -4370,11 +4403,11 @@ with tab5:
         ])
         st.dataframe(annual_cost_df, use_container_width=True, hide_index=True)
         st.caption(
-            "Levelized Cost = (Annual Energy Cost + Annual CAPEX Amortization) ÷ Annual Yield in "
-            f"tonnes, with CAPEX amortized over {amortization_years:g} years — see the CAPEX "
-            "section below for the line items each process draws on. This differs slightly from "
-            "the daily table's figure since CAPEX amortization doesn't scale with the capacity "
-            "factor the way Energy and Yield do."
+            "Levelized Cost = (Annual Energy Cost + Annual Water Cost + Annual CAPEX Amortization) "
+            f"÷ Annual Yield in tonnes, with CAPEX amortized over {amortization_years:g} years — "
+            "see the CAPEX section below for the line items each process draws on. This differs "
+            "slightly from the daily table's figure since CAPEX amortization doesn't scale with "
+            "the capacity factor the way Energy, Water and Yield do."
         )
         fig_ann_lc, ax_ann_lc = plt.subplots(figsize=(8, 5))
         ann_lc_values = [levelized_cost_annual_map[p] or 0.0 for p in available_processes]
