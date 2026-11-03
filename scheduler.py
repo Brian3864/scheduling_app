@@ -4128,13 +4128,13 @@ with tab5:
                 key="water_per_cycle_tab5",
             )
         with opex_col3:
-            cost_per_litre = st.number_input(
-                "Water cost ($ per litre)", min_value=0.0, value=32.0 / 5500.0, step=0.0001,
-                format="%.6f",
-                help="Cost per litre of water, derived from $32 per 5.5 m³ (32 / 5500 L ≈ "
-                     "$0.00582/L). Adjust to your actual water tariff.",
-                key="cost_per_litre_tab5",
+            cost_per_m3 = st.number_input(
+                "Water cost ($ per m³)", min_value=0.0, value=32.0 / 5.5, step=0.01,
+                help="Cost per cubic metre of water (1 m³ = 1000 L). Adjust to your actual "
+                     "water tariff.",
+                key="cost_per_m3_tab5",
             )
+            cost_per_litre = cost_per_m3 / 1000.0
         # Levelized Cost = (OPEX from energy + water + amortized CAPEX) ÷ Total Yield in tonnes.
         # CAPEX: each process is mapped to the CAPEX line item(s) for the physical Nelion(s)
         # it actually runs (see the CAPEX section below for the line items and
