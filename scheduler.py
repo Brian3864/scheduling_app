@@ -4188,12 +4188,33 @@ with tab5:
             p: comparison[p]["Total Cycles"] * water_per_cycle_l * cost_per_litre
             for p in available_processes
         }
+        # Other Operational Costs (Maintenance, Casual Labour, Security, WW Disposable,
+        # Solar Lease): a flat quarterly total that cuts across every configuration, the
+        # same way CAPEX does — it doesn't scale with cycles, yield, or energy use. The
+        # table is defined in the section further down this tab; its current values are
+        # reconstructed here the same way as the CAPEX table above.
+        default_misc_opex_rows = [
+            {"Item": "Maintenance", "Cost per Quarter ($)": 7095.00},
+            {"Item": "Casual Labour", "Cost per Quarter ($)": 308.00},
+            {"Item": "Security", "Cost per Quarter ($)": 2900.00},
+            {"Item": "WW Disposable", "Cost per Quarter ($)": 2006.00},
+            {"Item": "Solar Lease", "Cost per Quarter ($)": 2854.00},
+        ]
+        misc_opex_edit_state = st.session_state.get("misc_opex_table_tab5")
+        misc_opex_rows = [dict(row) for row in default_misc_opex_rows]
+        if isinstance(misc_opex_edit_state, dict):
+            for row_idx, changes in misc_opex_edit_state.get("edited_rows", {}).items():
+                misc_opex_rows[int(row_idx)].update(changes)
+        misc_opex_quarterly_total = sum(row["Cost per Quarter ($)"] for row in misc_opex_rows)
+        misc_opex_daily = misc_opex_quarterly_total / 90
+        misc_opex_annual = misc_opex_daily * 365
         levelized_cost_map = {
             p: (
                 (
                     comparison[p]["Total Energy (kWh)"] * cost_per_kwh
                     + water_opex_map[p]
                     + annual_capex_map[p] / 365
+                    + misc_opex_daily
                 )
                 / (comparison[p]["Total Yield (kg CO2)"] / 1000)
             ) if comparison[p]["Total Yield (kg CO2)"] > 0 else None
@@ -4211,6 +4232,7 @@ with tab5:
                     if comparison[p]["Total Yield (kg CO2)"] > 0 else "—"
                 ),
                 "Water Cost ($)": round(water_opex_map[p], 2),
+                "Other OPEX ($)": round(misc_opex_daily, 2),
                 "Levelized Cost ($/tonne CO2)": (
                     round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
                 ),
@@ -4219,11 +4241,14 @@ with tab5:
         ])
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
         st.caption(
-            "Levelized Cost = (Energy cost + Water cost + amortized CAPEX apportioned to one day) ÷ "
-            f"Total Yield in tonnes. Water cost = Total Cycles × {water_per_cycle_l:g} L/cycle × "
-            f"water cost per litre. CAPEX is amortized over {amortization_years:g} years (Annual "
-            "CAPEX ÷ 365 for the daily share) — see the CAPEX section below to edit the line items, "
-            "the amortization period, and which processes draw on which lines."
+            "Levelized Cost = (Energy cost + Water cost + amortized CAPEX apportioned to one day + "
+            "Other OPEX apportioned to one day) ÷ Total Yield in tonnes. Water cost = Total Cycles × "
+            f"{water_per_cycle_l:g} L/cycle × water cost per litre. CAPEX is amortized over "
+            f"{amortization_years:g} years (Annual CAPEX ÷ 365 for the daily share). Other OPEX "
+            "(Maintenance, Casual Labour, Security, WW Disposable, Solar Lease) is a flat quarterly "
+            "total ÷ 90 days, the same for every process — see the CAPEX and Other Operational Costs "
+            "sections below to edit the line items, the amortization period, and which processes draw "
+            "on which CAPEX lines."
         )
 
         st.markdown("### Compare a parameter across processes")
@@ -4385,7 +4410,10 @@ with tab5:
         }
         levelized_cost_annual_map = {
             p: (
-                (annual_energy_opex_map[p] + annual_water_opex_map[p] + annual_capex_map[p])
+                (
+                    annual_energy_opex_map[p] + annual_water_opex_map[p] + annual_capex_map[p]
+                    + misc_opex_annual
+                )
                 / annual_yield_tonnes_map[p]
             ) if annual_yield_tonnes_map[p] > 0 else None
             for p in available_processes
@@ -4396,6 +4424,7 @@ with tab5:
                 "Annual Energy Cost ($)": round(annual_energy_opex_map[p], 2),
                 "Annual Water Cost ($)": round(annual_water_opex_map[p], 2),
                 "Annual CAPEX Amortization ($)": round(annual_capex_map[p], 2),
+                "Annual Other OPEX ($)": round(misc_opex_annual, 2),
                 "Levelized Cost ($/tonne CO2)": (
                     round(levelized_cost_annual_map[p], 2) if levelized_cost_annual_map[p] is not None else "—"
                 ),
@@ -4404,11 +4433,13 @@ with tab5:
         ])
         st.dataframe(annual_cost_df, use_container_width=True, hide_index=True)
         st.caption(
-            "Levelized Cost = (Annual Energy Cost + Annual Water Cost + Annual CAPEX Amortization) "
-            f"÷ Annual Yield in tonnes, with CAPEX amortized over {amortization_years:g} years — "
-            "see the CAPEX section below for the line items each process draws on. This differs "
-            "slightly from the daily table's figure since CAPEX amortization doesn't scale with "
-            "the capacity factor the way Energy, Water and Yield do."
+            "Levelized Cost = (Annual Energy Cost + Annual Water Cost + Annual CAPEX Amortization + "
+            "Annual Other OPEX) ÷ Annual Yield in tonnes, with CAPEX amortized over "
+            f"{amortization_years:g} years and Other OPEX (Maintenance, Casual Labour, Security, WW "
+            "Disposable, Solar Lease) annualized as a flat quarterly total ÷ 90 days × 365 — see the "
+            "CAPEX and Other Operational Costs sections below for the line items. This differs "
+            "slightly from the daily table's figure since CAPEX and Other OPEX amortization don't "
+            "scale with the capacity factor the way Energy, Water and Yield do."
         )
         fig_ann_lc, ax_ann_lc = plt.subplots(figsize=(8, 5))
         ann_lc_values = [levelized_cost_annual_map[p] or 0.0 for p in available_processes]
@@ -4468,4 +4499,27 @@ with tab5:
             "Nelion 3 & 4 + Monolith; Concurrent/Interleaved (8-8) and Advanced Interleaved "
             "(6-6-4, 8-4-4, 6-5-5, 4-4-4-4) run the full 16-module plant, so they use all four lines "
             "including Utility skid + Plant."
+        )
+
+        st.markdown("### Other Operational Costs")
+        st.caption(
+            "Non-energy, non-water operational costs billed quarterly, already folded into the "
+            "Levelized Cost figures above as a flat daily/annual share applied equally to every "
+            "configuration — edit the values below and both the daily and annual tables update."
+        )
+        default_misc_opex_df = pd.DataFrame(default_misc_opex_rows)
+        misc_opex_df = st.data_editor(
+            default_misc_opex_df,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            key="misc_opex_table_tab5",
+            column_config={
+                "Cost per Quarter ($)": st.column_config.NumberColumn("Cost per Quarter ($)", format="$%.2f"),
+            },
+        )
+        st.caption(
+            f"Total per quarter: ${misc_opex_df['Cost per Quarter ($)'].sum():,.2f} → "
+            f"${misc_opex_daily:,.2f}/day (÷ 90) → ${misc_opex_annual:,.2f}/year (× 365), "
+            "the same for every configuration."
         )
