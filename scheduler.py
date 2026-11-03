@@ -4142,24 +4142,25 @@ with tab5:
         # config's Nelion composition): 4-4, 2-2 (sourced entirely from N3-M2n4) and
         # 2-2-2-2 (N3/N4) run only Nelion 3 & 4; 6-6 runs Nelion 2, 3 & 4; 8-8 and the four
         # full-16-module Advanced Interleaved configs (6-6-4, 8-4-4, 6-5-5, 4-4-4-4) run the
-        # whole plant, Utility skid included. capex_lookup/amortization_years read the CAPEX
-        # table/input defined in the CAPEX section further down this tab — Streamlit keeps a
-        # widget's current value in session_state under its key even when that widget is
-        # defined later in the script, so this works once the app has rendered at least once;
-        # first-ever load falls back to the same defaults the CAPEX table itself starts with.
-        default_capex_items = {
-            "Utility skid + Plant": 374000.00,
-            "Nelion 1 + Monolith": 249451.05,
-            "Nelion 2 + Monolith": 186800.00,
-            "Nelion 3 & 4 + Monolith": 390900.00,
-        }
-        if "capex_table_tab5" in st.session_state:
-            capex_lookup = dict(zip(
-                st.session_state["capex_table_tab5"]["Item"],
-                st.session_state["capex_table_tab5"]["CAPEX ($)"],
-            ))
-        else:
-            capex_lookup = default_capex_items
+        # whole plant, Utility skid included. The CAPEX table/amortization input are defined
+        # in the CAPEX section further down this tab, so their current values are read here
+        # from st.session_state by key. A plain widget (like the amortization number_input)
+        # stores its resulting value directly under its key, but st.data_editor's key instead
+        # stores an edit-delta dict ({"edited_rows", "added_rows", "deleted_rows"}), not the
+        # resulting DataFrame — so that delta is replayed onto the same default rows the CAPEX
+        # table itself starts from, to reconstruct the current values before the first render.
+        default_capex_rows = [
+            {"Item": "Utility skid + Plant", "CAPEX ($)": 374000.00},
+            {"Item": "Nelion 1 + Monolith", "CAPEX ($)": 249451.05},
+            {"Item": "Nelion 2 + Monolith", "CAPEX ($)": 186800.00},
+            {"Item": "Nelion 3 & 4 + Monolith", "CAPEX ($)": 390900.00},
+        ]
+        capex_edit_state = st.session_state.get("capex_table_tab5")
+        capex_rows = [dict(row) for row in default_capex_rows]
+        if isinstance(capex_edit_state, dict):
+            for row_idx, changes in capex_edit_state.get("edited_rows", {}).items():
+                capex_rows[int(row_idx)].update(changes)
+        capex_lookup = {row["Item"]: row["CAPEX ($)"] for row in capex_rows}
         amortization_years = st.session_state.get("capex_amortization_years", 10)
         FULL_PLANT_CAPEX_ITEMS = [
             "Utility skid + Plant", "Nelion 1 + Monolith", "Nelion 2 + Monolith", "Nelion 3 & 4 + Monolith",
