@@ -4460,6 +4460,56 @@ with tab5:
         st.pyplot(fig_ann_lc)
         plt.close(fig_ann_lc)
 
+        st.markdown("#### Cost Driver Breakdown")
+        st.caption(
+            "Share of Energy, Water, CAPEX and Other OPEX in the Annual Levelized Cost for a "
+            "selected process."
+        )
+        default_breakdown_idx = (
+            available_processes.index("Concurrent (4-4)") if "Concurrent (4-4)" in available_processes else 0
+        )
+        cost_breakdown_process = st.selectbox(
+            "Process for cost breakdown", available_processes, index=default_breakdown_idx,
+            key="cost_breakdown_process_tab5",
+        )
+        breakdown_labels = ["Energy", "Water", "CAPEX", "Other OPEX"]
+        breakdown_values = [
+            annual_energy_opex_map[cost_breakdown_process],
+            annual_water_opex_map[cost_breakdown_process],
+            annual_capex_map[cost_breakdown_process],
+            misc_opex_annual,
+        ]
+        # Fixed categorical order/hues (blue, orange, aqua, yellow) — kept stable across
+        # processes so a given cost driver always maps to the same color.
+        breakdown_colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
+        breakdown_text_colors = ["#ffffff", "#ffffff", "#ffffff", "#0b0b0b"]
+        if sum(breakdown_values) > 0:
+            fig_pie, ax_pie = plt.subplots(figsize=(6, 6))
+            wedges, _, autotexts = ax_pie.pie(
+                breakdown_values,
+                colors=breakdown_colors,
+                autopct="%1.1f%%",
+                startangle=90,
+                pctdistance=0.75,
+                wedgeprops={"edgecolor": "white", "linewidth": 1.5},
+            )
+            for autotext, text_color in zip(autotexts, breakdown_text_colors):
+                autotext.set_color(text_color)
+                autotext.set_fontsize(11)
+                autotext.set_fontweight("bold")
+            ax_pie.legend(
+                wedges,
+                [f"{label} (${value:,.0f})" for label, value in zip(breakdown_labels, breakdown_values)],
+                title="Cost driver", loc="center left", bbox_to_anchor=(1, 0.5),
+            )
+            ax_pie.set_title(f"Annual Levelized Cost Drivers — {cost_breakdown_process}")
+            ax_pie.axis("equal")
+            plt.tight_layout()
+            st.pyplot(fig_pie)
+            plt.close(fig_pie)
+        else:
+            st.info(f"No cost data to break down yet for {cost_breakdown_process}.")
+
         st.markdown("### CAPEX")
         st.caption(
             "Capital expenditure by asset, already folded into the Levelized Cost figures above — "
