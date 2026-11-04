@@ -4463,7 +4463,8 @@ with tab5:
         st.markdown("#### Cost Driver Breakdown")
         st.caption(
             "Share of Energy, Water, CAPEX and Other OPEX in the Annual Levelized Cost for a "
-            "selected process."
+            "selected process, expressed in $/tonne CO2 (each component's annual cost ÷ that "
+            "process's Annual Yield in tonnes)."
         )
         default_breakdown_idx = (
             available_processes.index("Concurrent (4-4)") if "Concurrent (4-4)" in available_processes else 0
@@ -4472,12 +4473,13 @@ with tab5:
             "Process for cost breakdown", available_processes, index=default_breakdown_idx,
             key="cost_breakdown_process_tab5",
         )
+        breakdown_yield_tonnes = annual_yield_tonnes_map[cost_breakdown_process]
         breakdown_labels = ["Energy", "Water", "CAPEX", "Other OPEX"]
         breakdown_values = [
-            annual_energy_opex_map[cost_breakdown_process],
-            annual_water_opex_map[cost_breakdown_process],
-            annual_capex_map[cost_breakdown_process],
-            misc_opex_annual,
+            (annual_energy_opex_map[cost_breakdown_process] / breakdown_yield_tonnes) if breakdown_yield_tonnes > 0 else 0.0,
+            (annual_water_opex_map[cost_breakdown_process] / breakdown_yield_tonnes) if breakdown_yield_tonnes > 0 else 0.0,
+            (annual_capex_map[cost_breakdown_process] / breakdown_yield_tonnes) if breakdown_yield_tonnes > 0 else 0.0,
+            (misc_opex_annual / breakdown_yield_tonnes) if breakdown_yield_tonnes > 0 else 0.0,
         ]
         # Fixed categorical order/hues (blue, orange, aqua, yellow) — kept stable across
         # processes so a given cost driver always maps to the same color.
@@ -4499,10 +4501,10 @@ with tab5:
                 autotext.set_fontweight("bold")
             ax_pie.legend(
                 wedges,
-                [f"{label} (${value:,.0f})" for label, value in zip(breakdown_labels, breakdown_values)],
+                [f"{label} (${value:,.2f}/tonne)" for label, value in zip(breakdown_labels, breakdown_values)],
                 title="Cost driver", loc="center left", bbox_to_anchor=(1, 0.5),
             )
-            ax_pie.set_title(f"Annual Levelized Cost Drivers — {cost_breakdown_process}")
+            ax_pie.set_title(f"Annual Levelized Cost Drivers ($/tonne CO2) — {cost_breakdown_process}")
             ax_pie.axis("equal")
             plt.tight_layout()
             st.pyplot(fig_pie)
