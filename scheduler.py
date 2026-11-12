@@ -638,7 +638,7 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         st.write("Distinct `Module` values:")
         st.dataframe(_diag_stages["Module"].value_counts())
 
-    st.markdown("**Water consumption per cycle — N3N4-M1n3** (the 4-4 config's source combo)")
+    st.markdown("**Water consumption per cycle — N3N4-M1n3 + N3N4-M2n4** (the 4-4 config's Group A + Group B)")
     try:
         _water_df = pd.read_sql(
             "SELECT reading_date, meter_code, volume_liters FROM water_meter_readings "
@@ -647,11 +647,12 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         )
         _water_df["volume_liters"] = pd.to_numeric(_water_df["volume_liters"], errors="coerce")
         _water_df["reading_date"] = pd.to_datetime(_water_df["reading_date"]).dt.date
+        _n3n4_modules = ["N3N4-M1n3", "N3N4-M2n4"]
         _n3n4_cycle_count = (
-            int((_diag_cycles["Module"] == "N3N4-M1n3").sum()) if _diag_cycles is not None else 0
+            int(_diag_cycles["Module"].isin(_n3n4_modules).sum()) if _diag_cycles is not None else 0
         )
         if _n3n4_cycle_count == 0:
-            st.write("No N3N4-M1n3 cycles in `plant_cycles` -- can't compute a per-cycle average.")
+            st.write("No N3N4-M1n3/N3N4-M2n4 cycles in `plant_cycles` -- can't compute a per-cycle average.")
         else:
             _water_totals = _water_df.groupby("meter_code")["volume_liters"].sum()
             _boiler_total = float(_water_totals.get("BOILER_WATER_TANK", 0.0))
@@ -681,10 +682,10 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
             )
             _cycle_dates = pd.to_datetime(_diag_cycles["start_time"]).dt.date
             _n3n4_cycles_that_day = int(
-                ((_diag_cycles["Module"] == "N3N4-M1n3") & (_cycle_dates == _selected_date)).sum()
+                (_diag_cycles["Module"].isin(_n3n4_modules) & (_cycle_dates == _selected_date)).sum()
             )
             st.write(f"Total water (boiler + cooling tower) on {_selected_date}: {_day_total:,.0f} L")
-            st.write(f"N3N4-M1n3 cycles on {_selected_date}: {_n3n4_cycles_that_day}")
+            st.write(f"N3N4-M1n3 + N3N4-M2n4 cycles on {_selected_date}: {_n3n4_cycles_that_day}")
             if _n3n4_cycles_that_day > 0:
                 st.write(f"Average: {_day_total / _n3n4_cycles_that_day:,.1f} L/cycle")
             else:
