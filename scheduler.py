@@ -1,14 +1,47 @@
 # === Streamlit App: Interleaved Desorption Scheduling ===
-import os
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Real plant cycle log (Cycle #, Module, Start Time, DES CO2 (kg), DES Hours,
-# BAG CO2 (kg), DES Vol Cap, eTotal kWh) used to seed realistic default
-# Energy/Yield-per-cycle values in the Advanced Interleaved tab, instead of 0.0.
-PLANT_CYCLES_CSV = os.path.join(os.path.dirname(__file__), "carbonnest_plant_cycles.csv")
+# Plant cycle log and stage-duration log now come from the live MySQL database
+# (SCADA -> MySQL -> this app) instead of the two static CSVs this app used to
+# ship with. Connection details (host/port/user/password/database) are never
+# in this file — they live only in Streamlit secrets (locally: .streamlit/
+# secrets.toml, gitignored; deployed: the app's Settings -> Secrets panel) under
+# a [connections.mysql] block, which st.connection("mysql", type="sql") reads
+# automatically.
+#
+# Table/column names below are a best guess at the live schema and may need
+# adjusting to match it exactly — only the two SQL queries and the two
+# "rename(columns=...)" maps need to change; nothing downstream of
+# _plant_cycles_df()/_stage_timestamps_df() does, since both still return a
+# DataFrame with the same columns the CSVs used to.
+#
+# Critically, the "Module" column's VALUES must also use the same combo-style
+# labels the rest of this file keys off of (e.g. "N1N2N3-M1n3", "N3-M2n4") --
+# see PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA, TAB3_PLANT_MODULES and the
+# REPRESENTS_*/PAIR_PHYSICAL_MODULES_* constants throughout this file. A
+# mismatch here won't raise an error -- _module_average/_phase_averages_for_module
+# just silently return 0.0/{} for a Module value that doesn't match any row.
+PLANT_CYCLES_TABLE = "plant_cycles"
+PLANT_CYCLES_COLUMNS = {
+    # live DB column name: name the rest of this file expects
+    "module": "Module",
+    "e_total_kwh": "eTotal kWh",
+    "bag_co2_kg": "BAG CO2 (kg)",
+}
+STAGE_TIMESTAMPS_TABLE = "stage_timestamps"
+STAGE_TIMESTAMPS_COLUMNS = {
+    "module": "Module",
+    "adsorption_min": "Adsorption (min)",
+    "evacuation_min": "Evacuation (min)",
+    "ncgs_purging_min": "NCGs Purging (min)",
+    "ncgs_purging_heating_min": "NCGs Purging/Heating (min)",
+    "heating_co2_purging_min": "Heating/CO2 Purging (min)",
+    "co2_purging_min": "CO2 Purging (min)",
+    "cooling_min": "Cooling (min)",
+}
 
 # Phase-duration sourcing (used by load_stage_duration_defaults_by_pair): Groups A
 # and C are built from the same 3-Nelion (N1N2N3) module combination, while Group B
@@ -117,8 +150,8 @@ PAIR_PHYSICAL_MODULES_4X4 = {
 # plant. Grouped by module TYPE rather than by Nelion: Group A = N3's M1&M3,
 # Group B = N4's M1&M3, Group C = N3's M2&M4, Group D = N4's M2&M4.
 # All four groups now have their own real recorded cycles (Nelion 4 was
-# commissioned and both carbonnest_plant_cycles.csv and
-# carbonnest_stage_timestamps.csv were updated with N4-M1n3/N4-M2n4 data), so
+# commissioned and both the plant-cycle and stage-duration data were updated
+# with N4-M1n3/N4-M2n4 data), so
 # each group sources Duration, Energy and Yield directly from its own matching
 # Module — no mirroring across Nelions, and since every group is already a
 # genuine 2-module pair (unlike 4-4-4-4's 4-module groups), no multiplier is
@@ -196,15 +229,19 @@ PAIR_PHYSICAL_MODULES_6_5_5 = {
     "Group C": ["N1-M2", "N1-M4", "N2-M2", "N2-M4", "N3-M2"],
 }
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def _plant_cycles_df():
-    """Load the plant cycle log, or None if it's missing/malformed. Cached since
-    every pair-default lookup across both tabs re-reads this same static file —
-    without caching, Streamlit was re-parsing it from disk multiple times on
-    every single rerun (any widget interaction anywhere in the whole app)."""
+    """Load the plant cycle log from MySQL, or None if the query/connection
+    fails. Cached (5 min TTL) since every pair-default lookup across both tabs
+    re-reads this same data — without caching, Streamlit would re-query the
+    database on every single rerun (any widget interaction anywhere in the
+    whole app); the TTL still lets fresh SCADA-sourced rows show up periodically
+    instead of only once per server restart."""
     try:
-        return pd.read_csv(PLANT_CYCLES_CSV)
-    except (FileNotFoundError, KeyError, ValueError):
+        conn = st.connection("mysql", type="sql")
+        df = conn.query(f"SELECT * FROM {PLANT_CYCLES_TABLE}")
+        return df.rename(columns=PLANT_CYCLES_COLUMNS)
+    except Exception:
         return None
 
 def _module_average(plant_cycles_df, module):
@@ -342,11 +379,6 @@ def load_plant_cycle_defaults_tab3():
         yield_total += co2
     return round(energy_total, 2), round(yield_total, 2)
 
-# Real per-stage duration log (Cycle #, Module, Adsorption/Evacuation/Preheating/
-# NCGs Purging/NCGs Purging-Heating/Heating-CO2 Purging/CO2 Purging/Cooling, all in
-# minutes) used to seed realistic default phase durations in Advanced Interleaved.
-STAGE_TIMESTAMPS_CSV = os.path.join(os.path.dirname(__file__), "carbonnest_stage_timestamps.csv")
-
 # The source log doesn't have a standalone "Heating" column or an app-equivalent
 # "Preheating" phase. Evacuation uses only the "Evacuation (min)" column on its
 # own (Preheating time is dropped entirely, not folded into any phase). Both
@@ -369,14 +401,17 @@ CORE_PHASE_FALLBACK_DURATIONS = {
     "Heating": 20, "CO2 Purging": 40, "Cooling": 30,
 }
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def _stage_timestamps_df():
-    """Load the stage-duration log, or None if it's missing/malformed. Cached for
-    the same reason as _plant_cycles_df() — this file is re-read for every
-    configuration's phase-duration defaults on every rerun otherwise."""
+    """Load the stage-duration log from MySQL, or None if the query/connection
+    fails. Cached (5 min TTL) for the same reason as _plant_cycles_df() — this
+    data is re-read for every configuration's phase-duration defaults on every
+    rerun otherwise."""
     try:
-        return pd.read_csv(STAGE_TIMESTAMPS_CSV)
-    except (FileNotFoundError, KeyError, ValueError):
+        conn = st.connection("mysql", type="sql")
+        df = conn.query(f"SELECT * FROM {STAGE_TIMESTAMPS_TABLE}")
+        return df.rename(columns=STAGE_TIMESTAMPS_COLUMNS)
+    except Exception:
         return None
 
 # The log has no Repressurization column at all, so that phase always keeps
@@ -394,8 +429,8 @@ def _phase_averages_for_module(stage_df, module):
 def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     """Return {pair: {phase: avg minutes}} for the 6 phases in STAGE_PHASE_COLUMNS,
     sourced from each pair's matching Module rows (pair_module_map, default
-    PAIR_PLANT_MODULE) in carbonnest_stage_timestamps.csv. A pair with a missing
-    file/module/phase simply has no entry for it — callers should fall back to
+    PAIR_PLANT_MODULE) in the live stage-duration data. A pair with a missing
+    data/module/phase simply has no entry for it — callers should fall back to
     their own default. A pair's map value can also be a weighted list like
     [("N3-M2n4", 1), ("N4-M2n4", 1)] (same shape as a Yield formula) when no
     single real combo covers that pair — this averages (not sums) each listed
@@ -1344,7 +1379,7 @@ with tab3:
     st.caption("Phase durations (minutes) — edit directly in the table")
     default_phase_durations_tab3 = load_stage_duration_defaults_tab3()
     st.caption(
-        "Defaults for both pairs are seeded from carbonnest_stage_timestamps.csv using the "
+        "Defaults for both pairs are seeded from the live stage-duration data using the "
         f"N1N2N3-M1n3 cycle average: {default_phase_durations_tab3}. "
         "Edit per pair if a pair's real durations differ."
     )
@@ -1391,7 +1426,7 @@ with tab3:
     default_energy_tab3, default_yield_tab3 = load_plant_cycle_defaults_tab3()
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
     st.caption(
-        f"Defaults for both pairs are seeded from carbonnest_plant_cycles.csv as the sum of the "
+        f"Defaults for both pairs are seeded from the live plant-cycle data as the sum of the "
         f"N1N2N3-M1n3 and N3-M2n4 cycle averages: {default_energy_tab3} kWh/cycle, "
         f"{default_yield_tab3} kg CO2/cycle. Edit per pair if a pair's real output differs."
     )
@@ -1530,7 +1565,7 @@ with tab3:
         )
 
     default_phase_durations_44 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_44_MODULE_MAP)
-    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N1N2-M1n3 cycle average.")
+    st.caption("Phase durations for both pairs are seeded from the live stage-duration data using the N1N2-M1n3 cycle average.")
     PHASE_DURATIONS_TAB3_44_VERSION = 1
     get_versioned_default_table(
         "phase_durations_tab3_44", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_44_VERSION,
@@ -1647,7 +1682,7 @@ with tab3:
         )
 
     default_phase_durations_22 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_22_MODULE_MAP)
-    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N3-M2n4 cycle average.")
+    st.caption("Phase durations for both pairs are seeded from the live stage-duration data using the N3-M2n4 cycle average.")
     PHASE_DURATIONS_TAB3_22_VERSION = 1
     get_versioned_default_table(
         "phase_durations_tab3_22", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_22_VERSION,
@@ -1801,7 +1836,7 @@ with tab3:
         )
 
     default_phase_durations_66 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_66_DURATION_MODULE_MAP)
-    st.caption("Phase durations for both pairs are seeded from carbonnest_stage_timestamps.csv using the N3N4-M1n3 cycle average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo).")
+    st.caption("Phase durations for both pairs are seeded from the live stage-duration data using the N3N4-M1n3 cycle average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo).")
     PHASE_DURATIONS_TAB3_66_VERSION = 1
     get_versioned_default_table(
         "phase_durations_tab3_66", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_66_VERSION,
@@ -3004,9 +3039,9 @@ with tab4:
 
     st.caption(
         "Defaults for Adsorption, Evacuation, NCG Purging, Heating, CO2 Purging, and Cooling are "
-        "seeded from carbonnest_stage_timestamps.csv: Group A and Group C from the N1N2N3-M1n3 "
+        "seeded from the live stage-duration data: Group A and Group C from the N1N2N3-M1n3 "
         "cycle average, Group B from the N1N2-M1n3 cycle average. Repressurization has no "
-        "equivalent in that log, so it keeps its original default. Edit any cell if a pair's real "
+        "equivalent in that data, so it keeps its original default. Edit any cell if a pair's real "
         "durations differ."
     )
 
@@ -3041,7 +3076,7 @@ with tab4:
     pair_plant_defaults = load_plant_cycle_defaults_by_pair(PAIRS)
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
     st.caption(
-        "Defaults are seeded from carbonnest_plant_cycles.csv. Energy per Cycle uses each pair's "
+        "Defaults are seeded from the live plant-cycle data. Energy per Cycle uses each pair's "
         "single Module average (PAIR_PLANT_MODULE, same source as phase durations): Group A/C from "
         f"N1N2N3-M1n3 ({pair_plant_defaults['Group A'][0]} kWh), Group B from N1N2-M1n3 "
         f"({pair_plant_defaults['Group B'][0]} kWh). Yield per Cycle instead uses a different formula "
@@ -3119,7 +3154,7 @@ with tab4:
         }),
     )
     st.caption(
-        "Phase durations seeded from carbonnest_stage_timestamps.csv: Group A (8-module pair) from "
+        "Phase durations seeded from the live stage-duration data: Group A (8-module pair) from "
         "the N1N2N3-M1n3 cycle average, Groups B and C (4-module pairs) from the N1N2-M1n3 cycle average."
     )
     adv_phase_table_844 = st.data_editor(
