@@ -638,7 +638,6 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         st.write("Distinct `Module` values:")
         st.dataframe(_diag_stages["Module"].value_counts())
 
-    st.markdown("**Water consumption per cycle — N3N4-M1n3 + N3N4-M2n4** (the 4-4 config's Group A + Group B)")
     try:
         _water_df = pd.read_sql(
             "SELECT reading_date, meter_code, volume_liters FROM water_meter_readings "
@@ -648,26 +647,8 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         _water_df["volume_liters"] = pd.to_numeric(_water_df["volume_liters"], errors="coerce")
         _water_df["reading_date"] = pd.to_datetime(_water_df["reading_date"]).dt.date
         _n3n4_modules = ["N3N4-M1n3", "N3N4-M2n4"]
-        _n3n4_cycle_count = (
-            int(_diag_cycles["Module"].isin(_n3n4_modules).sum()) if _diag_cycles is not None else 0
-        )
-        if _n3n4_cycle_count == 0:
-            st.write("No N3N4-M1n3/N3N4-M2n4 cycles in `plant_cycles` -- can't compute a per-cycle average.")
-        else:
-            _water_totals = _water_df.groupby("meter_code")["volume_liters"].sum()
-            _boiler_total = float(_water_totals.get("BOILER_WATER_TANK", 0.0))
-            _cooling_total = float(_water_totals.get("COOLING_TOWER", 0.0))
-            st.write(
-                f"Boiler water tank: {_boiler_total / _n3n4_cycle_count:,.1f} L/cycle "
-                f"(total {_boiler_total:,.0f} L over {_n3n4_cycle_count} cycles)"
-            )
-            st.write(
-                f"Cooling tower: {_cooling_total / _n3n4_cycle_count:,.1f} L/cycle "
-                f"(total {_cooling_total:,.0f} L over {_n3n4_cycle_count} cycles)"
-            )
-            st.write(f"Combined: {(_boiler_total + _cooling_total) / _n3n4_cycle_count:,.1f} L/cycle")
 
-        st.markdown("**Single-day breakdown**")
+        st.markdown("**Water consumption per cycle — single-day breakdown (N3N4-M1n3 + N3N4-M2n4)**")
         _available_dates = sorted(_water_df["reading_date"].dropna().unique())
         if not _available_dates:
             st.write("No water_meter_readings rows for BOILER_WATER_TANK/COOLING_TOWER.")
