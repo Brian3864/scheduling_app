@@ -4,3 +4,5 @@ matplotlib
 numpy
 sqlalchemy
 pymysql
+cloud-sql-python-connector[pymysql]
+google-auth

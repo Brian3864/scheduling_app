@@ -3,15 +3,48 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import sqlalchemy
+from google.cloud.sql.connector import Connector
+from google.oauth2 import service_account
 
 # Plant cycle log and stage-duration log now come from the live MySQL database
 # (SCADA -> MySQL -> this app) instead of the two static CSVs this app used to
-# ship with. Connection details (host/port/user/password/database) are never
-# in this file — they live only in Streamlit secrets (locally: .streamlit/
-# secrets.toml, gitignored; deployed: the app's Settings -> Secrets panel) under
-# a [connections.mysql] block, which st.connection("mysql", type="sql") reads
-# automatically.
-#
+# ship with. The database is Google Cloud SQL, reached via the Cloud SQL Python
+# Connector (not a plain host/port) using the instance connection name below --
+# that name, the database name, and the username are identifiers, not secrets,
+# so they're plain constants here. The two actual secrets -- the DB password
+# and the GCP service account key used to authenticate to the Cloud SQL Admin
+# API -- are never in this file; they live only in Streamlit secrets (locally:
+# .streamlit/secrets.toml, gitignored; deployed: the app's Settings -> Secrets
+# panel), under a [gcp_service_account] block (the exact fields from the
+# downloaded service-account JSON key) and st.secrets["mysql"]["password"].
+CLOUD_SQL_INSTANCE_CONNECTION_NAME = "scada-425409:us-central1:oc-public-db"
+CLOUD_SQL_DATABASE = "oc_public"
+CLOUD_SQL_USER = "brianstreamlit"
+
+
+@st.cache_resource
+def _mysql_engine():
+    """A cached SQLAlchemy engine that tunnels through the Cloud SQL Python
+    Connector using the GCP service account in secrets, re-used across reruns
+    instead of re-authenticating to the Cloud SQL Admin API on every query."""
+    credentials = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"]
+    )
+    connector = Connector(credentials=credentials)
+
+    def _getconn():
+        return connector.connect(
+            CLOUD_SQL_INSTANCE_CONNECTION_NAME,
+            "pymysql",
+            user=CLOUD_SQL_USER,
+            password=st.secrets["mysql"]["password"],
+            db=CLOUD_SQL_DATABASE,
+        )
+
+    return sqlalchemy.create_engine("mysql+pymysql://", creator=_getconn)
+
+
 # Table/column names below are a best guess at the live schema and may need
 # adjusting to match it exactly — only the two SQL queries and the two
 # "rename(columns=...)" maps need to change; nothing downstream of
@@ -238,8 +271,7 @@ def _plant_cycles_df():
     whole app); the TTL still lets fresh SCADA-sourced rows show up periodically
     instead of only once per server restart."""
     try:
-        conn = st.connection("mysql", type="sql")
-        df = conn.query(f"SELECT * FROM {PLANT_CYCLES_TABLE}")
+        df = pd.read_sql(f"SELECT * FROM {PLANT_CYCLES_TABLE}", _mysql_engine())
         return df.rename(columns=PLANT_CYCLES_COLUMNS)
     except Exception:
         return None
@@ -408,8 +440,7 @@ def _stage_timestamps_df():
     data is re-read for every configuration's phase-duration defaults on every
     rerun otherwise."""
     try:
-        conn = st.connection("mysql", type="sql")
-        df = conn.query(f"SELECT * FROM {STAGE_TIMESTAMPS_TABLE}")
+        df = pd.read_sql(f"SELECT * FROM {STAGE_TIMESTAMPS_TABLE}", _mysql_engine())
         return df.rename(columns=STAGE_TIMESTAMPS_COLUMNS)
     except Exception:
         return None
