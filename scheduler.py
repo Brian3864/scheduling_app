@@ -45,10 +45,10 @@ def _mysql_engine():
     return sqlalchemy.create_engine("mysql+pymysql://", creator=_getconn)
 
 
-# Table/column names below are a best guess at the live schema and may need
-# adjusting to match it exactly — only the two SQL queries and the two
-# "rename(columns=...)" maps need to change; nothing downstream of
-# _plant_cycles_df()/_stage_timestamps_df() does, since both still return a
+# Table/column names below match the real schema (per studio_results export,
+# 2026-11-12). Only the "rename(columns=...)" maps below and the WHERE clause
+# on stage_durations are schema-specific -- nothing downstream of
+# _plant_cycles_df()/_stage_timestamps_df() changed, since both still return a
 # DataFrame with the same columns the CSVs used to.
 #
 # Critically, the "Module" column's VALUES must also use the same combo-style
@@ -61,20 +61,30 @@ PLANT_CYCLES_TABLE = "plant_cycles"
 PLANT_CYCLES_COLUMNS = {
     # live DB column name: name the rest of this file expects
     "module": "Module",
-    "e_total_kwh": "eTotal kWh",
-    "bag_co2_kg": "BAG CO2 (kg)",
+    "etotal_kwh": "eTotal kWh",
+    "bag_co2": "BAG CO2 (kg)",
 }
-STAGE_TIMESTAMPS_TABLE = "stage_timestamps"
+PLANT_CYCLES_NUMERIC_COLUMNS = ["eTotal kWh", "BAG CO2 (kg)"]
+
+# stage_durations has a "has_data" flag (1 = a real reading was logged for
+# that cycle, 0 = placeholder/incomplete row) -- only has_data=1 rows are
+# pulled, so incomplete cycles don't drag the phase-duration averages down.
+STAGE_TIMESTAMPS_TABLE = "stage_durations"
 STAGE_TIMESTAMPS_COLUMNS = {
     "module": "Module",
-    "adsorption_min": "Adsorption (min)",
-    "evacuation_min": "Evacuation (min)",
-    "ncgs_purging_min": "NCGs Purging (min)",
-    "ncgs_purging_heating_min": "NCGs Purging/Heating (min)",
-    "heating_co2_purging_min": "Heating/CO2 Purging (min)",
-    "co2_purging_min": "CO2 Purging (min)",
-    "cooling_min": "Cooling (min)",
+    "adsorption": "Adsorption (min)",
+    "evacuation": "Evacuation (min)",
+    "ncgs_purging": "NCGs Purging (min)",
+    "ncgs_purging_heating": "NCGs Purging/Heating (min)",
+    "heating_co2_purging": "Heating/CO2 Purging (min)",
+    "co2_purging": "CO2 Purging (min)",
+    "cooling": "Cooling (min)",
 }
+STAGE_TIMESTAMPS_NUMERIC_COLUMNS = [
+    "Adsorption (min)", "Evacuation (min)", "NCGs Purging (min)",
+    "NCGs Purging/Heating (min)", "Heating/CO2 Purging (min)",
+    "CO2 Purging (min)", "Cooling (min)",
+]
 
 # Phase-duration sourcing (used by load_stage_duration_defaults_by_pair): Groups A
 # and C are built from the same 3-Nelion (N1N2N3) module combination, while Group B
@@ -272,7 +282,10 @@ def _plant_cycles_df():
     instead of only once per server restart."""
     try:
         df = pd.read_sql(f"SELECT * FROM {PLANT_CYCLES_TABLE}", _mysql_engine())
-        return df.rename(columns=PLANT_CYCLES_COLUMNS)
+        df = df.rename(columns=PLANT_CYCLES_COLUMNS)
+        for col in PLANT_CYCLES_NUMERIC_COLUMNS:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
     except Exception:
         return None
 
@@ -440,8 +453,13 @@ def _stage_timestamps_df():
     data is re-read for every configuration's phase-duration defaults on every
     rerun otherwise."""
     try:
-        df = pd.read_sql(f"SELECT * FROM {STAGE_TIMESTAMPS_TABLE}", _mysql_engine())
-        return df.rename(columns=STAGE_TIMESTAMPS_COLUMNS)
+        df = pd.read_sql(
+            f"SELECT * FROM {STAGE_TIMESTAMPS_TABLE} WHERE has_data = 1", _mysql_engine()
+        )
+        df = df.rename(columns=STAGE_TIMESTAMPS_COLUMNS)
+        for col in STAGE_TIMESTAMPS_NUMERIC_COLUMNS:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
     except Exception:
         return None
 
