@@ -597,18 +597,27 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         "doesn't match the combo strings in PAIR_PLANT_MODULE/PAIR_YIELD_FORMULA, "
         "e.g. 'N1N2N3-M1n3')."
     )
+    st.markdown("**Connection test**")
+    try:
+        with _mysql_engine().connect() as _conn:
+            _conn.exec_driver_sql("SELECT 1")
+        st.success("Connected to MySQL successfully.")
+    except Exception as _conn_exc:
+        st.error("Connection failed -- exception below (secrets are never included in this message):")
+        st.code(f"{type(_conn_exc).__name__}: {_conn_exc}")
+
     _diag_cycles = _plant_cycles_df()
     _diag_stages = _stage_timestamps_df()
     st.markdown("**plant_cycles**")
     if _diag_cycles is None:
-        st.error("Query/connection failed -- see Streamlit Cloud's app logs for the exception.")
+        st.error("Query failed -- see the connection test above for the exception.")
     else:
         st.write(f"{len(_diag_cycles)} rows")
         st.write("Distinct `Module` values:")
         st.dataframe(_diag_cycles["Module"].value_counts())
     st.markdown("**stage_durations** (has_data = 1 only)")
     if _diag_stages is None:
-        st.error("Query/connection failed -- see Streamlit Cloud's app logs for the exception.")
+        st.error("Query failed -- see the connection test above for the exception.")
     else:
         st.write(f"{len(_diag_stages)} rows")
         st.write("Distinct `Module` values:")
