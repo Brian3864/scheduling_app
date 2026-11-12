@@ -589,6 +589,31 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 Compares Total Cycles, Total Yield, and Total Energy across thirteen processes: Concurrent (8-8), Interleaved (8-8), Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
+with st.sidebar.expander("🛠️ Database diagnostics"):
+    st.caption(
+        "Raw view of what the live MySQL connection is actually returning -- use "
+        "this to check why a pair's Energy/Yield/Duration default might be "
+        "showing 0.0 (empty table, a failed connection, or a Module value that "
+        "doesn't match the combo strings in PAIR_PLANT_MODULE/PAIR_YIELD_FORMULA, "
+        "e.g. 'N1N2N3-M1n3')."
+    )
+    _diag_cycles = _plant_cycles_df()
+    _diag_stages = _stage_timestamps_df()
+    st.markdown("**plant_cycles**")
+    if _diag_cycles is None:
+        st.error("Query/connection failed -- see Streamlit Cloud's app logs for the exception.")
+    else:
+        st.write(f"{len(_diag_cycles)} rows")
+        st.write("Distinct `Module` values:")
+        st.dataframe(_diag_cycles["Module"].value_counts())
+    st.markdown("**stage_durations** (has_data = 1 only)")
+    if _diag_stages is None:
+        st.error("Query/connection failed -- see Streamlit Cloud's app logs for the exception.")
+    else:
+        st.write(f"{len(_diag_stages)} rows")
+        st.write("Distinct `Module` values:")
+        st.dataframe(_diag_stages["Module"].value_counts())
+
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
 
