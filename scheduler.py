@@ -293,15 +293,21 @@ def _module_average(plant_cycles_df, module):
     """(avg eTotal kWh, avg BAG CO2 kg) for one Module value's rows, or (0.0, 0.0)
     if there are none (or the log failed to load). Yield is sourced from BAG CO2
     (kg) — the actual captured/bagged CO2 — not DES CO2 (kg), which is a
-    desorption-side figure that can diverge from what's actually collected."""
+    desorption-side figure that can diverge from what's actually collected.
+    Rows missing a reading (NaN) or logged as exactly 0 are excluded from that
+    column's average rather than counted as a real 0-value cycle."""
     if plant_cycles_df is None:
         return 0.0, 0.0
     subset = plant_cycles_df[plant_cycles_df["Module"] == module]
     if len(subset) == 0:
         return 0.0, 0.0
+    energy_vals = subset["eTotal kWh"]
+    energy_vals = energy_vals[energy_vals.notna() & (energy_vals != 0)]
+    co2_vals = subset["BAG CO2 (kg)"]
+    co2_vals = co2_vals[co2_vals.notna() & (co2_vals != 0)]
     return (
-        round(float(subset["eTotal kWh"].mean()), 2),
-        round(float(subset["BAG CO2 (kg)"].mean()), 2),
+        round(float(energy_vals.mean()), 2) if len(energy_vals) > 0 else 0.0,
+        round(float(co2_vals.mean()), 2) if len(co2_vals) > 0 else 0.0,
     )
 
 def _decode_module_combo(combo):
@@ -468,14 +474,21 @@ def _stage_timestamps_df():
 # The log has no Repressurization column at all, so that phase always keeps
 # whatever value is already in the table (originally defaulted to 5 minutes).
 def _phase_averages_for_module(stage_df, module):
-    """{phase: avg minutes} for one Module's rows, or {} if there are none."""
+    """{phase: avg minutes} for one Module's rows, or {} if there are none.
+    A row whose phase total is missing (NaN) or exactly 0 is excluded from
+    that phase's average rather than counted as a real 0-minute cycle; a
+    phase left with no valid rows simply has no entry (same as a module with
+    no rows at all)."""
     subset = stage_df[stage_df["Module"] == module] if module else stage_df.iloc[0:0]
     if len(subset) == 0:
         return {}
-    return {
-        phase: float(subset[cols].sum(axis=1).mean())
-        for phase, cols in STAGE_PHASE_COLUMNS.items()
-    }
+    result = {}
+    for phase, cols in STAGE_PHASE_COLUMNS.items():
+        totals = subset[cols].sum(axis=1)
+        totals = totals[totals.notna() & (totals != 0)]
+        if len(totals) > 0:
+            result[phase] = float(totals.mean())
+    return result
 
 def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     """Return {pair: {phase: avg minutes}} for the 6 phases in STAGE_PHASE_COLUMNS,
