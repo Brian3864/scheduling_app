@@ -638,6 +638,36 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         st.write("Distinct `Module` values:")
         st.dataframe(_diag_stages["Module"].value_counts())
 
+    st.markdown("**Water consumption per cycle — N3N4-M1n3** (the 4-4 config's source combo)")
+    try:
+        _water_df = pd.read_sql(
+            "SELECT meter_code, volume_liters FROM water_meter_readings "
+            "WHERE meter_code IN ('BOILER_WATER_TANK', 'COOLING_TOWER')",
+            _mysql_engine(),
+        )
+        _water_df["volume_liters"] = pd.to_numeric(_water_df["volume_liters"], errors="coerce")
+        _n3n4_cycle_count = (
+            int((_diag_cycles["Module"] == "N3N4-M1n3").sum()) if _diag_cycles is not None else 0
+        )
+        if _n3n4_cycle_count == 0:
+            st.write("No N3N4-M1n3 cycles in `plant_cycles` -- can't compute a per-cycle average.")
+        else:
+            _water_totals = _water_df.groupby("meter_code")["volume_liters"].sum()
+            _boiler_total = float(_water_totals.get("BOILER_WATER_TANK", 0.0))
+            _cooling_total = float(_water_totals.get("COOLING_TOWER", 0.0))
+            st.write(
+                f"Boiler water tank: {_boiler_total / _n3n4_cycle_count:,.1f} L/cycle "
+                f"(total {_boiler_total:,.0f} L over {_n3n4_cycle_count} cycles)"
+            )
+            st.write(
+                f"Cooling tower: {_cooling_total / _n3n4_cycle_count:,.1f} L/cycle "
+                f"(total {_cooling_total:,.0f} L over {_n3n4_cycle_count} cycles)"
+            )
+            st.write(f"Combined: {(_boiler_total + _cooling_total) / _n3n4_cycle_count:,.1f} L/cycle")
+    except Exception as _water_exc:
+        st.error("Water query failed -- exception below:")
+        st.code(f"{type(_water_exc).__name__}: {_water_exc}")
+
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
 
