@@ -458,7 +458,9 @@ def _stage_timestamps_df():
         )
         df = df.rename(columns=STAGE_TIMESTAMPS_COLUMNS)
         for col in STAGE_TIMESTAMPS_NUMERIC_COLUMNS:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            # The live table stores these in hours; every "(min)"-named column
+            # downstream (phase durations throughout this file) expects minutes.
+            df[col] = pd.to_numeric(df[col], errors="coerce") * 60
         return df
     except Exception:
         return None
