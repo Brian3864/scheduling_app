@@ -641,11 +641,12 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
     st.markdown("**Water consumption per cycle — N3N4-M1n3** (the 4-4 config's source combo)")
     try:
         _water_df = pd.read_sql(
-            "SELECT meter_code, volume_liters FROM water_meter_readings "
+            "SELECT reading_date, meter_code, volume_liters FROM water_meter_readings "
             "WHERE meter_code IN ('BOILER_WATER_TANK', 'COOLING_TOWER')",
             _mysql_engine(),
         )
         _water_df["volume_liters"] = pd.to_numeric(_water_df["volume_liters"], errors="coerce")
+        _water_df["reading_date"] = pd.to_datetime(_water_df["reading_date"]).dt.date
         _n3n4_cycle_count = (
             int((_diag_cycles["Module"] == "N3N4-M1n3").sum()) if _diag_cycles is not None else 0
         )
@@ -664,6 +665,30 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
                 f"(total {_cooling_total:,.0f} L over {_n3n4_cycle_count} cycles)"
             )
             st.write(f"Combined: {(_boiler_total + _cooling_total) / _n3n4_cycle_count:,.1f} L/cycle")
+
+        st.markdown("**Single-day breakdown**")
+        _available_dates = sorted(_water_df["reading_date"].dropna().unique())
+        if not _available_dates:
+            st.write("No water_meter_readings rows for BOILER_WATER_TANK/COOLING_TOWER.")
+        elif _diag_cycles is None or "start_time" not in _diag_cycles.columns:
+            st.write("plant_cycles has no `start_time` column to match cycles to a day.")
+        else:
+            _selected_date = st.selectbox(
+                "Day", _available_dates, index=len(_available_dates) - 1, key="water_daily_date",
+            )
+            _day_total = float(
+                _water_df.loc[_water_df["reading_date"] == _selected_date, "volume_liters"].sum()
+            )
+            _cycle_dates = pd.to_datetime(_diag_cycles["start_time"]).dt.date
+            _n3n4_cycles_that_day = int(
+                ((_diag_cycles["Module"] == "N3N4-M1n3") & (_cycle_dates == _selected_date)).sum()
+            )
+            st.write(f"Total water (boiler + cooling tower) on {_selected_date}: {_day_total:,.0f} L")
+            st.write(f"N3N4-M1n3 cycles on {_selected_date}: {_n3n4_cycles_that_day}")
+            if _n3n4_cycles_that_day > 0:
+                st.write(f"Average: {_day_total / _n3n4_cycles_that_day:,.1f} L/cycle")
+            else:
+                st.write("No N3N4-M1n3 cycles that day -- can't compute a per-cycle average.")
     except Exception as _water_exc:
         st.error("Water query failed -- exception below:")
         st.code(f"{type(_water_exc).__name__}: {_water_exc}")
