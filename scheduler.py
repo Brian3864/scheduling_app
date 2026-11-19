@@ -621,6 +621,21 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         st.error("Connection failed -- exception below (secrets are never included in this message):")
         st.code(f"{type(_conn_exc).__name__}: {_conn_exc}")
 
+    def _freshness_caption(df, time_col):
+        """How long ago the most recent row's timestamp was -- the quickest way
+        to tell whether SCADA is still actively logging into this table, vs. a
+        connection that works fine but is just reading a stale/frozen table."""
+        if time_col not in df.columns or df[time_col].dropna().empty:
+            st.caption("No timestamp column to check freshness against.")
+            return
+        latest = pd.to_datetime(df[time_col]).max()
+        age = pd.Timestamp.now() - latest
+        st.write(f"Most recent `{time_col}`: {latest} ({age} ago)")
+        if age > pd.Timedelta(days=1):
+            st.warning("Most recent row is over a day old -- logging may have stalled.")
+        else:
+            st.success("Most recent row is within the last day -- still logging.")
+
     _diag_cycles = _plant_cycles_df()
     _diag_stages = _stage_timestamps_df()
     st.markdown("**plant_cycles**")
@@ -628,6 +643,7 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         st.error("Query failed -- see the connection test above for the exception.")
     else:
         st.write(f"{len(_diag_cycles)} rows")
+        _freshness_caption(_diag_cycles, "start_time")
         st.write("Distinct `Module` values:")
         st.dataframe(_diag_cycles["Module"].value_counts())
     st.markdown("**stage_durations** (has_data = 1 only)")
@@ -635,6 +651,7 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
         st.error("Query failed -- see the connection test above for the exception.")
     else:
         st.write(f"{len(_diag_stages)} rows")
+        _freshness_caption(_diag_stages, "start_time")
         st.write("Distinct `Module` values:")
         st.dataframe(_diag_stages["Module"].value_counts())
 
@@ -645,7 +662,11 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
             _mysql_engine(),
         )
         _water_df["volume_liters"] = pd.to_numeric(_water_df["volume_liters"], errors="coerce")
-        _water_df["reading_date"] = pd.to_datetime(_water_df["reading_date"]).dt.date
+        _water_df["reading_date"] = pd.to_datetime(_water_df["reading_date"])
+        st.markdown("**water_meter_readings**")
+        st.write(f"{len(_water_df)} rows (BOILER_WATER_TANK + COOLING_TOWER)")
+        _freshness_caption(_water_df, "reading_date")
+        _water_df["reading_date"] = _water_df["reading_date"].dt.date
         _n3n4_modules = ["N3N4-M1n3", "N3N4-M2n4"]
 
         st.markdown("**Water consumption per cycle — single-day breakdown (N3N4-M1n3 + N3N4-M2n4)**")
