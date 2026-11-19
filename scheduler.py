@@ -53,7 +53,7 @@ def _mysql_engine():
 #
 # Critically, the "Module" column's VALUES must also use the same combo-style
 # labels the rest of this file keys off of (e.g. "N1N2N3-M1n3", "N3-M2n4") --
-# see PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA, TAB3_PLANT_MODULES and the
+# see PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA, TAB3_8_8_MODULE and the
 # REPRESENTS_*/PAIR_PHYSICAL_MODULES_* constants throughout this file. A
 # mismatch here won't raise an error -- _module_average/_phase_averages_for_module
 # just silently return 0.0/{} for a Module value that doesn't match any row.
@@ -412,23 +412,18 @@ def load_plant_cycle_defaults_by_pair(pairs):
     (PAIR_PLANT_MODULE for Energy, PAIR_YIELD_FORMULA for Yield)."""
     return load_plant_cycle_defaults_weighted(pairs, PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA)
 
-# Full Schedule Analysis's two pairs (Group A, Group B; 8 modules each) don't map to
-# a single Module value in the plant log the way tab4's pairs do, so both pairs
-# instead share the SUM of two module-type averages: the 3-Nelion desorption
-# combination (N1N2N3-M1n3) plus the Nelion-3 M2/M4 combination (N3-M2n4).
-TAB3_PLANT_MODULES = ["N1N2N3-M1n3", "N3-M2n4"]
+# Full Schedule Analysis's two pairs (Group A, Group B; 8 modules each) are now a
+# real recorded combination -- N3 & N4's full 8 modules (all 4 positions on each)
+# -- logged as its own Module value after a week of cycles on that grouping. This
+# replaces the previous estimate (the SUM of two unrelated module-type averages:
+# N1N2N3-M1n3 + N3-M2n4, neither of which was actually an 8-module reading).
+TAB3_8_8_MODULE = "N3N4-M1n3M2n4"
 
 def load_plant_cycle_defaults_tab3():
-    """Return (avg eTotal kWh, avg BAG CO2 kg) summed across TAB3_PLANT_MODULES,
-    used as the shared default for both Group A and Group B."""
-    plant_cycles_df = _plant_cycles_df()
-    energy_total = 0.0
-    yield_total = 0.0
-    for module in TAB3_PLANT_MODULES:
-        energy, co2 = _module_average(plant_cycles_df, module)
-        energy_total += energy
-        yield_total += co2
-    return round(energy_total, 2), round(yield_total, 2)
+    """Return (avg eTotal kWh, avg BAG CO2 kg), the shared default for both
+    Group A and Group B, sourced directly from TAB3_8_8_MODULE's own real
+    average (no summing/proxying)."""
+    return _module_average(_plant_cycles_df(), TAB3_8_8_MODULE)
 
 # The source log doesn't have a standalone "Heating" column or an app-equivalent
 # "Preheating" phase. Evacuation uses only the "Evacuation (min)" column on its
@@ -528,28 +523,21 @@ def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
         }
     return defaults
 
-# Phase durations for Full Schedule Analysis's two pairs are sourced directly from
-# this one module combination's own per-phase averages — no summing with N3-M2n4
-# (that summing is still used for the Energy/Yield table above, which is a
-# separate, deliberately different sourcing choice).
-TAB3_PHASE_DURATION_MODULE = "N1N2N3-M1n3"
-
 def load_stage_duration_defaults_tab3():
     """Return {phase: avg minutes}, the shared phase-duration default for both
     Group A and Group B in Full Schedule Analysis, sourced directly from
-    TAB3_PHASE_DURATION_MODULE's own per-phase averages (no summing). Falls back
-    to CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no matching rows."""
+    TAB3_8_8_MODULE's own real per-phase averages (missing/zero rows excluded,
+    same as every other configuration's sourcing). Falls back to
+    CORE_PHASE_FALLBACK_DURATIONS if the log is missing or has no matching rows
+    for that module, or for any individual phase."""
     stage_df = _stage_timestamps_df()
     if stage_df is None:
         return dict(CORE_PHASE_FALLBACK_DURATIONS)
 
-    subset = stage_df[stage_df["Module"] == TAB3_PHASE_DURATION_MODULE]
-    if len(subset) == 0:
-        return dict(CORE_PHASE_FALLBACK_DURATIONS)
-
+    phase_avgs = _phase_averages_for_module(stage_df, TAB3_8_8_MODULE)
     return {
-        phase: round(float(subset[cols].sum(axis=1).mean()), 1)
-        for phase, cols in STAGE_PHASE_COLUMNS.items()
+        phase: round(phase_avgs[phase], 1) if phase in phase_avgs else CORE_PHASE_FALLBACK_DURATIONS[phase]
+        for phase in STAGE_PHASE_COLUMNS
     }
 
 def get_versioned_default_table(state_key, expected_columns, version, build_fn):
@@ -582,7 +570,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each, phase durations/rates fully editable), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; now that Nelion 4 is recorded, both groups' Duration and Energy come from N3N4-M1n3's own real average — Group A's exact match, and the closest real 4-module N3+N4 reading available for Group B, which has no recorded N3N4-M2n4 combo of its own — while Yield stays module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; now that Nelion 4 is recorded, both groups' Duration and Energy come from N3N4-M1n3's own real average — Group A's exact match, and the closest real 4-module N3+N4 reading available for Group B, which has no recorded N3N4-M2n4 combo of its own — while Yield stays module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own real averages), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -1536,10 +1524,10 @@ with tab3:
     default_phase_durations_tab3 = load_stage_duration_defaults_tab3()
     st.caption(
         "Defaults for both pairs are seeded from the live stage-duration data using the "
-        f"N1N2N3-M1n3 cycle average: {default_phase_durations_tab3}. "
-        "Edit per pair if a pair's real durations differ."
+        f"N3N4-M1n3M2n4 cycle average (now a real recorded 8-module combination): "
+        f"{default_phase_durations_tab3}. Edit per pair if a pair's real durations differ."
     )
-    PHASE_DURATIONS_TAB3_VERSION = 4  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
+    PHASE_DURATIONS_TAB3_VERSION = 5  # bump whenever load_stage_duration_defaults_tab3()'s sourcing changes
     get_versioned_default_table(
         "phase_durations_tab3", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_VERSION,
         lambda: pd.DataFrame({
@@ -1582,12 +1570,13 @@ with tab3:
     default_energy_tab3, default_yield_tab3 = load_plant_cycle_defaults_tab3()
     st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
     st.caption(
-        f"Defaults for both pairs are seeded from the live plant-cycle data as the sum of the "
-        f"N1N2N3-M1n3 and N3-M2n4 cycle averages: {default_energy_tab3} kWh/cycle, "
+        f"Defaults for both pairs are seeded from the live plant-cycle data using the "
+        f"N3N4-M1n3M2n4 cycle average (now a real recorded 8-module combination, replacing "
+        f"the previous N1N2N3-M1n3 + N3-M2n4 estimate): {default_energy_tab3} kWh/cycle, "
         f"{default_yield_tab3} kg CO2/cycle. Edit per pair if a pair's real output differs."
     )
     pair_labels_tab3 = [f"Group {gid}" for gid in GROUP_IDS]
-    ENERGY_YIELD_TAB3_DEFAULTS_VERSION = 1  # bump whenever load_plant_cycle_defaults_tab3()'s sourcing changes
+    ENERGY_YIELD_TAB3_DEFAULTS_VERSION = 2  # bump whenever load_plant_cycle_defaults_tab3()'s sourcing changes
 
     energy_yield_tab3_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
     get_versioned_default_table(
