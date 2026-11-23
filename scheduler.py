@@ -1567,6 +1567,15 @@ with tab3:
     "Allow Cooling Pause During Evacuation",
     value=True
 )
+    preload_group_b = st.checkbox(
+        "Start Group B pre-loaded (begins in Evacuation, no startup gap)",
+        value=True,
+        help="Group B's very first cycle skips Adsorption and starts directly in "
+             "Evacuation, so it begins desorbing at the same instant Group A begins its "
+             "first Adsorption instead of idling while Group A holds the shared Adsorption "
+             "capacity. Every cycle after the first runs the normal full Adsorption→Cooling "
+             "sequence. Applies to all four configurations below (8-8, 4-4, 2-2, 6-6).",
+    )
 
     # --- Fixed Constants ---
     TOTAL_MINUTES = target_time # 24 hours * 60 minutes
@@ -2074,11 +2083,18 @@ with tab3:
 
 
     # --- Core Simulation Function ---
-    def run_simulation(module_delays_config, phase_durations_config, resource_limits_config, current_desorption_mode, group_ids, group_of, phase_durations_by_group=None, concurrent_desorption_cap=1, shared_evac_cooling_cap=1, shared_purge_heat_co2_cap=1, modules_to_run=None, baseline_mode=False):
+    def run_simulation(module_delays_config, phase_durations_config, resource_limits_config, current_desorption_mode, group_ids, group_of, phase_durations_by_group=None, concurrent_desorption_cap=1, shared_evac_cooling_cap=1, shared_purge_heat_co2_cap=1, modules_to_run=None, baseline_mode=False, preloaded_groups=None):
         """Runs scheduling simulation; returns schedule, resource_usage, evac/cool stats.
         modules_to_run: optional list of module IDs (default: all MODULES).
-        baseline_mode: if True, no shared resource constraints—each phase has its own capacity."""
+        baseline_mode: if True, no shared resource constraints—each phase has its own capacity.
+        preloaded_groups: optional set of group ids (e.g. {"B"}) whose modules are treated as
+        already charged with CO2 at t=0 — their very first cycle skips Adsorption and starts
+        directly at Evacuation, so that group doesn't idle waiting on shared Adsorption capacity
+        while another group's first Adsorption is in progress. Every cycle after the first runs
+        the full Adsorption→Cooling sequence as normal."""
         modules = modules_to_run if modules_to_run is not None else list(MODULES)
+        preloaded_groups = preloaded_groups or set()
+        module_first_cycle_done = {mod: False for mod in modules}
         resource_usage = {phase: np.zeros(TOTAL_MINUTES, dtype=int) for phase in PHASES}
         module_timers = {mod: 0 for mod in modules}
         evac_cool_stats = {
@@ -2189,6 +2205,10 @@ with tab3:
                 t = module_timers[mod]
                 cycle_phases = []
                 group_id = group_of[mod]
+                skip_adsorption_this_cycle = (
+                    group_id in preloaded_groups and not module_first_cycle_done[mod]
+                )
+                phases_this_cycle = PHASES[1:] if skip_adsorption_this_cycle else PHASES
 
                 # Work on a scratch copy of resource usage so a module's whole next
                 # phase can be tried and rolled back (via cycle_success) without
@@ -2196,7 +2216,7 @@ with tab3:
                 temp_resource_usage_for_cycle = {phase: np.copy(resource_usage[phase]) for phase in PHASES}
                 cycle_success = True
 
-                for phase in PHASES:
+                for phase in phases_this_cycle:
                     if phase == "Adsorption" and adsorption_dur_uniform is not None:
                         duration = adsorption_dur_uniform
                     else:
@@ -2355,8 +2375,9 @@ with tab3:
                     for phase, start, end in cycle_phases:
                         schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
                     module_timers[mod] = t
+                    module_first_cycle_done[mod] = True
                     progress_made = True
-                
+
         df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start']).reset_index(drop=True)
         return df_schedule, resource_usage, evac_cool_stats
 
@@ -2414,13 +2435,14 @@ with tab3:
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
+                opt_preloaded_groups = {"B"} if preload_group_b else None
                 for i, delay in enumerate(delay_search_range):
                     current_module_delays_for_opt = build_module_delays(delay, group_ids, group_of, MODULES)
                     schedule_int, _, _ = run_simulation(
-                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
+                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES, preloaded_groups=opt_preloaded_groups
                     )
                     schedule_conc, _, _ = run_simulation(
-                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
+                        current_module_delays_for_opt, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", group_ids, group_of, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES, preloaded_groups=opt_preloaded_groups
                     )
                     cycles_int = int(count_complete_cycles_df(schedule_int)["Complete Cycles"].sum())
                     cycles_conc = int(count_complete_cycles_df(schedule_conc)["Complete Cycles"].sum())
@@ -2446,12 +2468,13 @@ with tab3:
         # --- Run both simulations with the determined delay ---
         st.markdown("---")
         actual_module_delays = build_module_delays(final_delay_to_use, GROUP_IDS, GROUP_OF, MODULES)
+        actual_preloaded_groups = {"B"} if preload_group_b else None
 
         schedule_int, resource_usage_int, conflicts_int = run_simulation(
-            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
+            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Interleaved", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES, preloaded_groups=actual_preloaded_groups
         )
         schedule_conc, resource_usage_conc, _ = run_simulation(
-            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES
+            actual_module_delays, PHASE_DURATIONS, RESOURCE_LIMITS, "Concurrent", GROUP_IDS, GROUP_OF, phase_durations_by_group=PHASE_DURATIONS_BY_GROUP, concurrent_desorption_cap=concurrent_desorption_cap, shared_evac_cooling_cap=shared_evac_cooling_cap, shared_purge_heat_co2_cap=shared_purge_heat_co2_cap, modules_to_run=MODULES, preloaded_groups=actual_preloaded_groups
         )
 
         cycle_counts_int = count_complete_cycles_df(schedule_int)
