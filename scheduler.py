@@ -1527,7 +1527,7 @@ with tab3:
         shared_purge_heat_co2_cap = st.number_input(
             "Max modules: NCG + Heating + CO2 (Interleaved)",
             1, 32, 8,
-            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once."
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once. In Interleaved, only one group can be in these phases at a time; the other group can evacuate, then waits."
         )
     st.caption("Phase durations (minutes) — edit directly in the table")
     default_phase_durations_tab3 = load_stage_duration_defaults_tab3()
@@ -1717,7 +1717,7 @@ with tab3:
         )
         shared_purge_heat_co2_cap_44 = st.number_input(
             "Max modules: NCG + Heating + CO2 (4-4, Interleaved)", 1, TAB3_44_TOTAL_MODULES, 4,
-            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once.",
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once. In Interleaved, only one group can be in these phases at a time; the other group can evacuate, then waits.",
             key="shared_purge_heat_co2_cap_44",
         )
 
@@ -1842,7 +1842,7 @@ with tab3:
         )
         shared_purge_heat_co2_cap_22 = st.number_input(
             "Max modules: NCG + Heating + CO2 (2-2, Interleaved)", 1, TAB3_22_TOTAL_MODULES, 2,
-            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once.",
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once. In Interleaved, only one group can be in these phases at a time; the other group can evacuate, then waits.",
             key="shared_purge_heat_co2_cap_22",
         )
 
@@ -1996,7 +1996,7 @@ with tab3:
         )
         shared_purge_heat_co2_cap_66 = st.number_input(
             "Max modules: NCG + Heating + CO2 (6-6, Interleaved)", 1, TAB3_66_TOTAL_MODULES, 6,
-            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once.",
+            help="One shared resource for all three phases. Max modules in NCG Purging, Heating, or CO2 Purging combined at once. In Interleaved, only one group can be in these phases at a time; the other group can evacuate, then waits.",
             key="shared_purge_heat_co2_cap_66",
         )
 
@@ -2144,18 +2144,14 @@ with tab3:
 
                 if phase in ("NCG Purging", "Heating", "CO2 Purging"):
                     purge_heat_co2_phases = ("NCG Purging", "Heating", "CO2 Purging")
-                    for t in range(start, end_safe):
-                        combined = sum(current_resource_state[p][t] for p in purge_heat_co2_phases)
-                        if combined >= shared_purge_heat_co2_cap:
-                            return False
-                    return True
+                    combined = sum(current_resource_state[p][start:end_safe] for p in purge_heat_co2_phases)
+                    return bool(np.all(combined < shared_purge_heat_co2_cap))
             # Concurrent: per-phase caps ignored for desorption phases; concurrent_desorption_cap gates Evacuation start
             if current_desorption_mode == "Concurrent" and phase == "Evacuation":
                 desorption_phases_plus_cooling = list(DESORPTION_PHASES) + ["Cooling"]
-                for t in range(start, end_safe):
-                    total_in_desorption = sum(current_resource_state[p][t] for p in desorption_phases_plus_cooling)
-                    if total_in_desorption >= concurrent_desorption_cap:
-                        return False
+                total_in_desorption = sum(current_resource_state[p][start:end_safe] for p in desorption_phases_plus_cooling)
+                if np.any(total_in_desorption >= concurrent_desorption_cap):
+                    return False
             return True
 
         def reserve_internal(phase, start, duration, current_resource_state):
@@ -2192,192 +2188,201 @@ with tab3:
             #     return False if enforce_evac_cool else np.any(current_resource_state["Cooling"][start:end_safe] > 0)
             # return False
         
-        # Respect group pairings (odd=Group A, even=Group B): process Group A first, then Group B
-        mod_order = sorted(modules, key=lambda m: (group_of.get(m, "A") != "A", m))
-        progress_made = True
-        # Main scheduling loop: repeatedly sweep every module, advancing each by one
-        # more phase per pass, until a full sweep places nothing new (the operating
-        # period is exhausted for every module). This is the same greedy pattern as
-        # tab1/tab2, generalized to N modules across two groups with shared resources.
-        while progress_made:
-            progress_made = False
-            for mod in mod_order:
-                t = module_timers[mod]
-                cycle_phases = []
-                group_id = group_of[mod]
-                skip_adsorption_this_cycle = (
-                    group_id in preloaded_groups and not module_first_cycle_done[mod]
-                )
-                phases_this_cycle = PHASES[1:] if skip_adsorption_this_cycle else PHASES
+        # Event-driven scheduling with no group priority: always advance whichever
+        # module is ready earliest, one phase at a time, so every shared resource is
+        # first-come-first-served in real time. NCG Purging -> Heating -> CO2 Purging
+        # is booked as one unbroken block, and (Interleaved) only one group may hold
+        # that block at a time; the other group can still evacuate, then waits.
+        CHAIN = ["NCG Purging", "Heating", "CO2 Purging"]
+        chain_by_group = {g: np.zeros(TOTAL_MINUTES, dtype=int) for g in {group_of[m] for m in modules}}
+        group_exclusive_chain = current_desorption_mode == "Interleaved" and not baseline_mode
 
-                # Work on a scratch copy of resource usage so a module's whole next
-                # phase can be tried and rolled back (via cycle_success) without
-                # corrupting the shared state if it turns out not to fit.
-                temp_resource_usage_for_cycle = {phase: np.copy(resource_usage[phase]) for phase in PHASES}
-                cycle_success = True
+        module_cycles = {mod: [] for mod in modules}  # each cycle: {"phases": [[phase, start, end], ...], "done": bool}
+        module_phase_idx = {mod: 0 for mod in modules}
+        module_last_chain_end = {mod: -1 for mod in modules}
+        open_cooling = {}  # mod -> (cooling start, duration) while a later Evacuation can still pause it
+        active = set(modules)
 
-                for phase in phases_this_cycle:
-                    if phase == "Adsorption" and adsorption_dur_uniform is not None:
-                        duration = adsorption_dur_uniform
-                    else:
-                        base_dur = phase_durations_by_group[group_id][phase] if phase_durations_by_group else phase_durations_config[phase]
-                        duration = adjusted_duration(phase, base_dur)
+        def phase_duration(group_id, phase):
+            if phase == "Adsorption" and adsorption_dur_uniform is not None:
+                return adsorption_dur_uniform
+            base_dur = phase_durations_by_group[group_id][phase] if phase_durations_by_group else phase_durations_config[phase]
+            return adjusted_duration(phase, base_dur)
 
-                    # Find the earliest minute, from t onward, where this phase can start.
-                    attempt_start = t
-                    conflict_hit = False
-                    while attempt_start + duration <= TOTAL_MINUTES:
-                        if evac_cool_conflict_internal(phase, attempt_start, duration, temp_resource_usage_for_cycle, mod):
-                            # This is a Cooling attempt colliding with the other group's
-                            # Evacuation. Rather than scan minute-by-minute, jump the
-                            # search forward by that Evacuation's full duration (from the
-                            # phase-duration table) and retry from there.
-                            this_group = group_of[mod]
-                            other_group = "B" if this_group == "A" else "A"
-                            # Use this call's own phase_durations_by_group (not the module-level
-                            # PHASE_DURATIONS_BY_GROUP), so a second configuration with different
-                            # durations doesn't silently borrow the first configuration's Evacuation time.
-                            pause_minutes = int(
-                                phase_durations_by_group[other_group]["Evacuation"] if phase_durations_by_group
-                                else phase_durations_config["Evacuation"]
-                            )
+        def gap_after(phase):
+            nxt = PHASES.index(phase) + 1
+            return PHASE_GAPS.get((phase, PHASES[nxt]), 0) if nxt < len(PHASES) else 0
 
-                            if not conflict_hit:
-                                evac_cool_stats["cooling_delay_events"] += 1
-                                conflict_hit = True
+        def chain_layout(start, group_id):
+            layout, t0 = [], start
+            for p in CHAIN:
+                d = phase_duration(group_id, p)
+                layout.append((p, t0, t0 + d))
+                t0 += d + gap_after(p)
+            return layout
 
-                            evac_cool_stats["cooling_delay_minutes"] += pause_minutes
-                            attempt_start += pause_minutes
-                            continue
+        def chain_fits(layout, group_id):
+            for p, s, e in layout:
+                if not can_allocate_internal(p, s, e - s, resource_usage):
+                    return False
+                if group_exclusive_chain and any(
+                    np.any(usage[s:e] > 0) for g, usage in chain_by_group.items() if g != group_id
+                ):
+                    return False
+            return True
 
-                        if can_allocate_internal(
-                            phase, attempt_start, duration,
-                            temp_resource_usage_for_cycle
-                        ):
-                            break
-                        attempt_start += 1
+        def cooling_segments_from(start, duration):
+            """Split a Cooling run around any Evacuation already booked during it, so
+            Cooling stops for the Evacuation and resumes for its remaining time."""
+            if not allow_cooling_pause:
+                return [(start, start + duration)]
+            evac_busy = resource_usage["Evacuation"]
+            segments, remaining, cur = [], duration, start
+            while remaining > 0:
+                window_end = min(TOTAL_MINUTES, cur + remaining)
+                busy = np.flatnonzero(evac_busy[cur:window_end] > 0) if cur < window_end else []
+                if len(busy) == 0:
+                    segments.append((cur, cur + remaining))
+                    remaining = 0
+                else:
+                    next_conflict = cur + int(busy[0])
+                    if next_conflict > cur:
+                        segments.append((cur, next_conflict))
+                        remaining -= next_conflict - cur
+                    cur = next_conflict
+                    while cur < TOTAL_MINUTES and evac_busy[cur] > 0:
+                        cur += 1
+            return segments
 
-                    if attempt_start + duration > TOTAL_MINUTES:
-                        # No valid start time left before the operating period ends —
-                        # this module doesn't get another complete cycle.
-                        cycle_success = False
+        def pause_overlapping_cooling(evac_mod, s, e):
+            """A newly booked Evacuation overrides any other module's Cooling that is
+            still running across it: re-split that Cooling and push its end later.
+            Safe because that module's next phase hasn't been scheduled yet (its
+            Cooling ends after `s`, and modules are advanced in time order)."""
+            for other, (c_start, c_dur) in list(open_cooling.items()):
+                if other == evac_mod:
+                    continue
+                phases = module_cycles[other][-1]["phases"]
+                old = [seg for seg in phases if seg[0] == "Cooling"]
+                if not any(seg[1] < e and seg[2] > s for seg in old):
+                    continue
+                old_end = old[-1][2]
+                for seg in old:
+                    resource_usage["Cooling"][seg[1]:min(seg[2], TOTAL_MINUTES)] -= 1
+                    phases.remove(seg)
+                new_segments = cooling_segments_from(c_start, c_dur)
+                for ns, ne in new_segments:
+                    resource_usage["Cooling"][ns:min(ne, TOTAL_MINUTES)] += 1
+                    phases.append(["Cooling", ns, ne])
+                evac_cool_stats["cooling_delay_events"] += 1
+                evac_cool_stats["cooling_delay_minutes"] += new_segments[-1][1] - old_end
+                module_timers[other] = new_segments[-1][1]
+
+        while active:
+            # Earliest-ready module first; on a tie, whichever last held the
+            # NCG/Heating/CO2 block longest ago, so neither group is favored.
+            mod = min(active, key=lambda m: (module_timers[m], module_last_chain_end[m], m))
+            open_cooling.pop(mod, None)
+            t = module_timers[mod]
+            group_id = group_of[mod]
+            phases_this_cycle = (
+                PHASES[1:] if group_id in preloaded_groups and not module_first_cycle_done[mod] else PHASES
+            )
+            idx = module_phase_idx[mod]
+            if idx == 0:
+                module_cycles[mod].append({"phases": [], "done": False})
+            cycle = module_cycles[mod][-1]["phases"]
+            phase = phases_this_cycle[idx]
+
+            if phase == CHAIN[0]:
+                layout, start = None, t
+                while True:
+                    candidate = chain_layout(start, group_id)
+                    if candidate[-1][2] > TOTAL_MINUTES:
                         break
+                    if chain_fits(candidate, group_id):
+                        layout = candidate
+                        break
+                    start += 1
+                if layout is None:
+                    active.discard(mod)
+                    continue
+                for p, s, e in layout:
+                    reserve_internal(p, s, e - s, resource_usage)
+                    chain_by_group[group_id][s:min(e, TOTAL_MINUTES)] += 1
+                    cycle.append([p, s, e])
+                module_last_chain_end[mod] = layout[-1][2]
+                module_timers[mod] = layout[-1][2] + gap_after(CHAIN[-1])
+                module_phase_idx[mod] = idx + len(CHAIN)
 
-                    # reserve_internal(
-                    #     phase, attempt_start, duration,
-                    #     temp_resource_usage_for_cycle
-                    # )
-                    # cycle_phases.append((phase, attempt_start, attempt_start + duration))
-                    
-                    # t = attempt_start + duration
-
-                    if phase == "Cooling" and allow_cooling_pause:
-                        # Cooling actually pauses here (separate from the search above,
-                        # which only found a valid *start* time). Even after Cooling has
-                        # begun, an Evacuation elsewhere can still start mid-way through
-                        # it; this walks minute-by-minute through the Cooling duration
-                        # and splits it into multiple (start, end) segments around any
-                        # such conflicts, so Cooling stops for the conflict and resumes
-                        # for its remaining time as soon as Evacuation frees up.
-                        remaining = duration
-                        cooling_segments = []
-                        current_start = attempt_start
-
-                        while remaining > 0:
-
-                            evac_busy = temp_resource_usage_for_cycle["Evacuation"]
-
-                            # Scan forward for the next minute Evacuation is active.
-                            next_conflict = None
-
-                            for t_check in range(
-                                current_start,
-                                min(TOTAL_MINUTES, current_start + remaining)
-                            ):
-                                if evac_busy[t_check] > 0:
-                                    next_conflict = t_check
-                                    break
-
-                            if next_conflict is None:
-                                # No conflict for the rest of the remaining duration —
-                                # run straight through to the end.
-                                cooling_segments.append(
-                                    (current_start, current_start + remaining)
-                                )
-                                remaining = 0
-
-                            else:
-                                # Close out the segment that ran up to the conflict...
-                                if next_conflict > current_start:
-
-                                    run_time = next_conflict - current_start
-
-                                    cooling_segments.append(
-                                        (current_start, next_conflict)
-                                    )
-
-                                    remaining -= run_time
-
-                                # ...then skip forward past the whole Evacuation window
-                                # before resuming the search for the next segment.
-                                pause_end = next_conflict
-
-                                while (
-                                    pause_end < TOTAL_MINUTES and
-                                    evac_busy[pause_end] > 0
-                                ):
-                                    pause_end += 1
-
-                                current_start = pause_end
-
-                        # Reserve and record each Cooling segment as its own scheduled
-                        # block (this is why a single Cooling "phase" can show up as
-                        # more than one bar on the Gantt chart when it was paused).
-                        for seg_start, seg_end in cooling_segments:
-
-                            reserve_internal(
-                                "Cooling",
-                                seg_start,
-                                seg_end - seg_start,
-                                temp_resource_usage_for_cycle
-                            )
-
-                            cycle_phases.append(
-                                ("Cooling", seg_start, seg_end)
-                            )
-
-                        t = cooling_segments[-1][1]
-
-                    else:
-
-                        reserve_internal(
-                            phase,
-                            attempt_start,
-                            duration,
-                            temp_resource_usage_for_cycle
+            elif phase == "Cooling":
+                duration = phase_duration(group_id, "Cooling")
+                attempt_start, conflict_hit, placed = t, False, False
+                while attempt_start + duration <= TOTAL_MINUTES:
+                    if evac_cool_conflict_internal("Cooling", attempt_start, duration, resource_usage, mod):
+                        # Cooling can't start during another module's Evacuation; jump
+                        # ahead by the other group's Evacuation duration and retry.
+                        other_group = "B" if group_id == "A" else "A"
+                        pause_minutes = int(
+                            phase_durations_by_group[other_group]["Evacuation"] if phase_durations_by_group
+                            else phase_durations_config["Evacuation"]
                         )
+                        if not conflict_hit:
+                            evac_cool_stats["cooling_delay_events"] += 1
+                            conflict_hit = True
+                        evac_cool_stats["cooling_delay_minutes"] += pause_minutes
+                        attempt_start += pause_minutes
+                        continue
+                    if can_allocate_internal("Cooling", attempt_start, duration, resource_usage):
+                        placed = True
+                        break
+                    attempt_start += 1
+                if not placed:
+                    active.discard(mod)
+                    continue
+                segments = cooling_segments_from(attempt_start, duration)
+                for s, e in segments:
+                    reserve_internal("Cooling", s, e - s, resource_usage)
+                    cycle.append(["Cooling", s, e])
+                open_cooling[mod] = (attempt_start, duration)
+                module_timers[mod] = segments[-1][1]
+                module_phase_idx[mod] = idx + 1
 
-                        cycle_phases.append(
-                            (phase, attempt_start, attempt_start + duration)
-                        )
+            else:
+                duration = phase_duration(group_id, phase)
+                attempt_start = t
+                while (attempt_start + duration <= TOTAL_MINUTES
+                       and not can_allocate_internal(phase, attempt_start, duration, resource_usage)):
+                    attempt_start += 1
+                if attempt_start + duration > TOTAL_MINUTES:
+                    active.discard(mod)
+                    continue
+                reserve_internal(phase, attempt_start, duration, resource_usage)
+                cycle.append([phase, attempt_start, attempt_start + duration])
+                module_timers[mod] = attempt_start + duration + gap_after(phase)
+                module_phase_idx[mod] = idx + 1
+                if phase == "Evacuation" and allow_cooling_pause:
+                    pause_overlapping_cooling(mod, attempt_start, attempt_start + duration)
 
-                        t = attempt_start + duration
+            if module_phase_idx[mod] >= len(phases_this_cycle):
+                module_cycles[mod][-1]["done"] = True
+                module_phase_idx[mod] = 0
+                module_first_cycle_done[mod] = True
 
-                    next_index = PHASES.index(phase) + 1
-                    if next_index < len(PHASES):
-                        next_phase = PHASES[next_index]
-                        buffer_time = PHASE_GAPS.get((phase, next_phase), 0)
-                        t += buffer_time
-                
-                if cycle_success:
-                    for phase_name in PHASES:
-                        resource_usage[phase_name] = np.copy(temp_resource_usage_for_cycle[phase_name])
-                    for phase, start, end in cycle_phases:
+        # Only keep cycles that finished inside the operating period; release the
+        # capacity held by any cycle cut off at the end.
+        schedule = []
+        for mod in modules:
+            for c in module_cycles[mod]:
+                if c["done"] and all(end <= TOTAL_MINUTES for _, _, end in c["phases"]):
+                    for phase, start, end in c["phases"]:
                         schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
-                    module_timers[mod] = t
-                    module_first_cycle_done[mod] = True
-                    progress_made = True
+                else:
+                    for phase, start, end in c["phases"]:
+                        resource_usage[phase][start:min(end, TOTAL_MINUTES)] -= 1
 
+        if not schedule:
+            return pd.DataFrame(columns=["Module", "Phase", "Start", "End"]), resource_usage, evac_cool_stats
         df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start']).reset_index(drop=True)
         return df_schedule, resource_usage, evac_cool_stats
 
