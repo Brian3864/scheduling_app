@@ -289,16 +289,20 @@ def _plant_cycles_df():
     except Exception:
         return None
 
-def _module_average(plant_cycles_df, module):
+def _module_average(plant_cycles_df, module, since=None):
     """(avg eTotal kWh, avg BAG CO2 kg) for one Module value's rows, or (0.0, 0.0)
     if there are none (or the log failed to load). Yield is sourced from BAG CO2
     (kg) — the actual captured/bagged CO2 — not DES CO2 (kg), which is a
     desorption-side figure that can diverge from what's actually collected.
     Rows missing a reading (NaN) or logged as exactly 0 are excluded from that
-    column's average rather than counted as a real 0-value cycle."""
+    column's average rather than counted as a real 0-value cycle. If `since`
+    is given, only rows with start_time on or after it are averaged -- e.g. to
+    reflect a process change made partway through the log."""
     if plant_cycles_df is None:
         return 0.0, 0.0
     subset = plant_cycles_df[plant_cycles_df["Module"] == module]
+    if since is not None:
+        subset = subset[pd.to_datetime(subset["start_time"]) >= since]
     if len(subset) == 0:
         return 0.0, 0.0
     energy_vals = subset["eTotal kWh"]
@@ -380,7 +384,7 @@ def physical_pairing_table(pairs, physical_modules_map):
         rows.append(row)
     return pd.DataFrame(rows)
 
-def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map):
+def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_map, since=None):
     """Return {pair: (avg eTotal kWh, avg BAG CO2 kg)}. Energy per Cycle normally
     comes from each pair's single matching Module (energy_module_map), but a
     pair's value can also be a weighted list like [("N3-M2n4", 1), ("N4-M2n4", 1)]
@@ -388,21 +392,22 @@ def load_plant_cycle_defaults_weighted(pairs, energy_module_map, yield_formula_m
     this sums the listed modules' own Energy averages, weighted, same as Yield.
     Yield per Cycle always comes from a weighted sum of one or more Module
     averages (yield_formula_map, e.g. {"Group A": [("N1N2N3-M1n3", 1),
-    ("N3-M2n4", 1)]}). A pair missing from either mapping gets 0.0 for that value."""
+    ("N3-M2n4", 1)]}). A pair missing from either mapping gets 0.0 for that value.
+    `since` is passed straight through to _module_average -- see its docstring."""
     plant_cycles_df = _plant_cycles_df()
     defaults = {}
     for pair in pairs:
         energy_source = energy_module_map.get(pair)
         if isinstance(energy_source, str) or energy_source is None:
-            energy, _ = _module_average(plant_cycles_df, energy_source)
+            energy, _ = _module_average(plant_cycles_df, energy_source, since=since)
         else:
             energy = sum(
-                weight * _module_average(plant_cycles_df, module)[0]
+                weight * _module_average(plant_cycles_df, module, since=since)[0]
                 for module, weight in energy_source
             )
         yield_total = 0.0
         for module, weight in yield_formula_map.get(pair, []):
-            _, co2 = _module_average(plant_cycles_df, module)
+            _, co2 = _module_average(plant_cycles_df, module, since=since)
             yield_total += weight * co2
         defaults[pair] = (round(energy, 2), round(yield_total, 2))
     return defaults
@@ -468,13 +473,16 @@ def _stage_timestamps_df():
 
 # The log has no Repressurization column at all, so that phase always keeps
 # whatever value is already in the table (originally defaulted to 5 minutes).
-def _phase_averages_for_module(stage_df, module):
+def _phase_averages_for_module(stage_df, module, since=None):
     """{phase: avg minutes} for one Module's rows, or {} if there are none.
     A row whose phase total is missing (NaN) or exactly 0 is excluded from
     that phase's average rather than counted as a real 0-minute cycle; a
     phase left with no valid rows simply has no entry (same as a module with
-    no rows at all)."""
+    no rows at all). If `since` is given, only rows with start_time on or
+    after it are averaged -- see _module_average's docstring."""
     subset = stage_df[stage_df["Module"] == module] if module else stage_df.iloc[0:0]
+    if since is not None:
+        subset = subset[pd.to_datetime(subset["start_time"]) >= since]
     if len(subset) == 0:
         return {}
     result = {}
@@ -485,7 +493,7 @@ def _phase_averages_for_module(stage_df, module):
             result[phase] = float(totals.mean())
     return result
 
-def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
+def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None, since=None):
     """Return {pair: {phase: avg minutes}} for the 6 phases in STAGE_PHASE_COLUMNS,
     sourced from each pair's matching Module rows (pair_module_map, default
     PAIR_PLANT_MODULE) in the live stage-duration data. A pair with a missing
@@ -494,7 +502,8 @@ def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     [("N3-M2n4", 1), ("N4-M2n4", 1)] (same shape as a Yield formula) when no
     single real combo covers that pair — this averages (not sums) each listed
     module's own phase durations, weighted, since Duration represents a typical
-    cycle's timing rather than a combined total."""
+    cycle's timing rather than a combined total. `since` is passed straight
+    through to _phase_averages_for_module -- see _module_average's docstring."""
     pair_module_map = pair_module_map if pair_module_map is not None else PAIR_PLANT_MODULE
     stage_df = _stage_timestamps_df()
     if stage_df is None:
@@ -504,7 +513,7 @@ def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
     for pair in pairs:
         source = pair_module_map.get(pair)
         if isinstance(source, str) or source is None:
-            phase_avgs = _phase_averages_for_module(stage_df, source)
+            phase_avgs = _phase_averages_for_module(stage_df, source, since=since)
             defaults[pair] = {phase: round(v, 1) for phase, v in phase_avgs.items()}
             continue
         # Weighted average across multiple real modules.
@@ -512,7 +521,7 @@ def load_stage_duration_defaults_by_pair(pairs, pair_module_map=None):
         combined = {}
         missing_any = False
         for module, weight in source:
-            phase_avgs = _phase_averages_for_module(stage_df, module)
+            phase_avgs = _phase_averages_for_module(stage_df, module, since=since)
             if not phase_avgs:
                 missing_any = True
                 break
@@ -1661,6 +1670,10 @@ with tab3:
     MODULES_44 = list(range(1, TAB3_44_TOTAL_MODULES + 1))
     GROUP_OF_44 = {m: ("A" if m % 2 == 1 else "B") for m in MODULES_44}
     TAB3_44_MODULE_MAP = {"A": "N3N4-M1n3", "B": "N3N4-M1n3"}
+    # Only cycles/stage-duration rows logged on or after this date feed the 4-4
+    # config's Duration/Energy/Yield defaults, to reflect a process change made
+    # on the plant around then rather than being diluted by older behavior.
+    TAB3_44_DATA_SINCE = pd.Timestamp("2026-11-18")
     TAB3_44_YIELD_FORMULA = {"A": [("N3N4-M1n3", 1)], "B": [("N3-M2n4", 1), ("N4-M2n4", 1)]}
     # Group A's real physical modules match its N3N4-M1n3 source exactly. Group
     # B's don't — its Duration/Energy borrow Group A's N3N4-M1n3 combo since
@@ -1709,9 +1722,14 @@ with tab3:
             key="shared_purge_heat_co2_cap_44",
         )
 
-    default_phase_durations_44 = load_stage_duration_defaults_by_pair(["A", "B"], TAB3_44_MODULE_MAP)
-    st.caption("Phase durations for both pairs are seeded from the live stage-duration data using the N1N2-M1n3 cycle average.")
-    PHASE_DURATIONS_TAB3_44_VERSION = 1
+    default_phase_durations_44 = load_stage_duration_defaults_by_pair(
+        ["A", "B"], TAB3_44_MODULE_MAP, since=TAB3_44_DATA_SINCE,
+    )
+    st.caption(
+        f"Phase durations for both pairs are seeded from the live stage-duration data using the "
+        f"N3N4-M1n3 cycle average, rows logged on or after {TAB3_44_DATA_SINCE.date()} only."
+    )
+    PHASE_DURATIONS_TAB3_44_VERSION = 2
     get_versioned_default_table(
         "phase_durations_tab3_44", ["Phase", "Group A (min)", "Group B (min)"], PHASE_DURATIONS_TAB3_44_VERSION,
         lambda: pd.DataFrame({
@@ -1737,14 +1755,17 @@ with tab3:
     PHASE_DURATIONS_44 = grp_a_44
     PHASE_DURATIONS_BY_GROUP_44 = {"A": grp_a_44, "B": grp_b_44}
 
-    default_energy_yield_44 = load_plant_cycle_defaults_weighted(["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA)
+    default_energy_yield_44 = load_plant_cycle_defaults_weighted(
+        ["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA, since=TAB3_44_DATA_SINCE,
+    )
     st.caption(
         f"Both groups' Energy comes from N3N4-M1n3's own real average (Group B has no "
         f"recorded N3N4-M2n4 combo of its own); Group A's Yield also comes from "
         f"N3N4-M1n3, while Group B's Yield sums N3-M2n4's and N4-M2n4's own real "
-        f"averages: {default_energy_yield_44}. Edit per pair if a pair's real output differs."
+        f"averages: {default_energy_yield_44}. Only cycles on or after "
+        f"{TAB3_44_DATA_SINCE.date()} are averaged. Edit per pair if a pair's real output differs."
     )
-    ENERGY_YIELD_TAB3_44_VERSION = 1
+    ENERGY_YIELD_TAB3_44_VERSION = 2
     get_versioned_default_table(
         "energy_yield_tab3_44", ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"], ENERGY_YIELD_TAB3_44_VERSION,
         lambda: pd.DataFrame({
