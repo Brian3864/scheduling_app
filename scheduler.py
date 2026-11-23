@@ -581,15 +581,18 @@ Stage-based visualization for paired modules.
 **Tab 3: Full Schedule Analysis**
 - Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; both are now directly recorded combinations in their own right, so Group A's Duration, Energy and Yield all come from N3N4-M1n3's own real average and Group B's from N3N4-M2n4's own real average — no more borrowing Group A's number for Group B, and no more type-matched sum for Yield either; only cycles logged on or after 2026-11-18 feed these defaults), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
+- Scheduling is first-come-first-served in time order — no group has priority. NCG Purging → Heating → CO2 Purging runs as one unbroken block, and only one group can be in it at a time (Interleaved); the other group can evacuate, then waits. Group B can start pre-loaded (in Evacuation at minute 0) to avoid a startup gap
+- A cycle can start before the end of the operating period and run past it (the plant keeps going into the next day); only cycles that finish inside the period count toward cycles, yield and energy
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
-- Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
+- Gantt charts, cycle counts, phase breakdown (total minutes per phase), and an idle-time breakdown by cause, for every configuration
 
 **Tab 4: Advanced Interleaved**
 
 Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Group A, Group B, and Group C.
-- Each pair cycles through three phase groups: Adsorption, the Desorption chain (Evacuation → NCG Purging → Heating → CO2 Purging), and Cooling
-- Adsorption is the only phase group that can run for two pairs at once; the Desorption chain and Cooling are each limited to one pair at a time across the whole plant
-- Evacuation takes priority over Cooling: if another pair is ready to begin its Desorption chain while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the conflicting Evacuation ends
+- Each pair cycles through Adsorption → Evacuation → NCG Purging → Heating → CO2 Purging → Cooling → Repressurization, scheduled first-come-first-served in time order with no pair favored
+- Adsorption is the only phase that can run for two pairs at once; Evacuation, the NCG → Heating → CO2 block (always run unbroken), Cooling and Repressurization are each limited to one pair at a time. A pair can evacuate while another holds the NCG → Heating → CO2 block, then waits
+- Evacuation takes priority over Cooling: if another pair evacuates while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the Evacuation ends
+- A cycle can start before the end of the operating period and run past it; only cycles that finish inside the period count as complete. Each configuration also shows an idle-time breakdown by cause
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
 - Five configurations are compared side by side, grouped into two families:
   - **3-Pair Configurations** (original Adsorption-overlap rule: one privileged pair can overlap Adsorption with the other two, but those two cannot overlap each other): 6-6-4 and 8-4-4 (different module-to-pair groupings), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield)
@@ -692,6 +695,47 @@ with st.sidebar.expander("🛠️ Database diagnostics"):
     except Exception as _water_exc:
         st.error("Water query failed -- exception below:")
         st.code(f"{type(_water_exc).__name__}: {_water_exc}")
+
+IDLE_CAUSE_LABELS = {
+    ("Adsorption", "Evacuation"): "Waiting to start Evacuation (after Adsorption)",
+    ("Evacuation", "NCG Purging"): "Waiting for the NCG → Heating → CO2 block (after Evacuation)",
+    ("CO2 Purging", "Cooling"): "Waiting to start Cooling (after CO2 Purging)",
+    ("Cooling", "Cooling"): "Cooling paused for another Evacuation",
+    ("Cooling", "Adsorption"): "Waiting to start Adsorption (after Cooling)",
+    ("Cooling", "Repressurization"): "Waiting to start Repressurization (after Cooling)",
+    ("Repressurization", "Adsorption"): "Waiting to start Adsorption (after Repressurization)",
+}
+
+
+def idle_breakdown_table(schedule_df, unit_col, units_by_label, total_minutes):
+    """Average idle minutes per unit (module or pair) in each column's group,
+    split by what the unit was waiting for. Each column adds up to that group's
+    average Idle (min) in the utilisation tables."""
+    totals = {label: {} for label in units_by_label}
+    for label, units in units_by_label.items():
+        for unit in units:
+            rows = schedule_df[schedule_df[unit_col] == unit].sort_values("Start")
+            cursor, prev_phase = 0, None
+            for start, end, phase in zip(rows["Start"], rows["End"], rows["Phase"]):
+                start, end = min(start, total_minutes), min(end, total_minutes)
+                if start > cursor:
+                    cause = ("Start of day (before first phase)" if prev_phase is None
+                             else IDLE_CAUSE_LABELS.get((prev_phase, phase), f"Waiting between {prev_phase} and {phase}"))
+                    totals[label][cause] = totals[label].get(cause, 0) + (start - cursor) / len(units)
+                cursor, prev_phase = max(cursor, end), phase
+            if cursor < total_minutes:
+                cause = "End of day (next phase couldn't start before the period ended)"
+                totals[label][cause] = totals[label].get(cause, 0) + (total_minutes - cursor) / len(units)
+    causes = sorted({c for t in totals.values() for c in t}, key=lambda c: -sum(t.get(c, 0) for t in totals.values()))
+    table = pd.DataFrame({
+        "Waiting for": causes + ["Total idle"],
+        **{
+            f"{label} (min)": [round(totals[label].get(c, 0), 1) for c in causes] + [round(sum(totals[label].values()), 1)]
+            for label in units_by_label
+        },
+    })
+    return table
+
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
@@ -2093,9 +2137,12 @@ with tab3:
         while another group's first Adsorption is in progress. Every cycle after the first runs
         the full Adsorption→Cooling sequence as normal."""
         modules = modules_to_run if modules_to_run is not None else list(MODULES)
+        # Arrays/fit checks run past the operating period so a cycle can start
+        # before the end of the day and finish after it.
+        horizon = 2 * TOTAL_MINUTES + 1
         preloaded_groups = preloaded_groups or set()
         module_first_cycle_done = {mod: False for mod in modules}
-        resource_usage = {phase: np.zeros(TOTAL_MINUTES, dtype=int) for phase in PHASES}
+        resource_usage = {phase: np.zeros(horizon, dtype=int) for phase in PHASES}
         module_timers = {mod: 0 for mod in modules}
         evac_cool_stats = {
             "cooling_delay_events": 0,
@@ -2118,9 +2165,9 @@ with tab3:
             Evacuation/Cooling and NCG+Heating+CO2 pools, or Concurrent's single
             desorption-wide cap)."""
             end_time = start + duration
-            if end_time > TOTAL_MINUTES or start < 0:
+            if end_time > horizon or start < 0:
                 return False
-            end_safe = min(end_time, TOTAL_MINUTES)  # clamp for array bounds (indices 0..TOTAL_MINUTES-1)
+            end_safe = min(end_time, horizon)  # clamp for array bounds (indices 0..horizon-1)
             # Adsorption: always per-phase capacity from table
             if phase == "Adsorption":
                 return bool(np.all(current_resource_state[phase][start:end_safe] < resource_limits_config[phase]))
@@ -2157,7 +2204,7 @@ with tab3:
         def reserve_internal(phase, start, duration, current_resource_state):
             """Occupy one capacity slot of this phase for every minute in [start, start+duration)."""
             end_time = start + duration
-            end_safe = min(end_time, TOTAL_MINUTES)
+            end_safe = min(end_time, horizon)
             current_resource_state[phase][start:end_safe] += 1
 
         def evac_cool_conflict_internal(phase, start, duration, current_resource_state, mod):
@@ -2171,14 +2218,14 @@ with tab3:
             if not enforce_evac_cool:
                 return False   
             # end_time = start + duration
-            # end_safe = min(end_time, TOTAL_MINUTES)
+            # end_safe = min(end_time, horizon)
             # enforce_evac_cool: Evacuation overrides Cooling (Cooling pauses). Only Cooling waits.
             # When off: No interruption—both block each other; whoever started first runs to completion.
             if phase != "Cooling":
                 return False
              
             end_time = start + duration
-            end_safe = min(end_time, TOTAL_MINUTES)
+            end_safe = min(end_time, horizon)
 
             this_group = group_of[mod]
             other_group = "B" if this_group == "A" else "A"
@@ -2193,11 +2240,14 @@ with tab3:
         # first-come-first-served in real time. NCG Purging -> Heating -> CO2 Purging
         # is booked as one unbroken block, and (Interleaved) only one group may hold
         # that block at a time; the other group can still evacuate, then waits.
+        # A phase may start any time before the end of the operating period and run
+        # past it (the plant keeps going into the next day); only cycles that finish
+        # inside the period count as complete.
         CHAIN = ["NCG Purging", "Heating", "CO2 Purging"]
-        chain_by_group = {g: np.zeros(TOTAL_MINUTES, dtype=int) for g in {group_of[m] for m in modules}}
+        chain_by_group = {g: np.zeros(horizon, dtype=int) for g in {group_of[m] for m in modules}}
         group_exclusive_chain = current_desorption_mode == "Interleaved" and not baseline_mode
 
-        module_cycles = {mod: [] for mod in modules}  # each cycle: {"phases": [[phase, start, end], ...], "done": bool}
+        module_cycles = {mod: [] for mod in modules}  # each cycle: {"phases": [[phase, start, end], ...], "done", "full"}
         module_phase_idx = {mod: 0 for mod in modules}
         module_last_chain_end = {mod: -1 for mod in modules}
         open_cooling = {}  # mod -> (cooling start, duration) while a later Evacuation can still pause it
@@ -2239,7 +2289,7 @@ with tab3:
             evac_busy = resource_usage["Evacuation"]
             segments, remaining, cur = [], duration, start
             while remaining > 0:
-                window_end = min(TOTAL_MINUTES, cur + remaining)
+                window_end = min(horizon, cur + remaining)
                 busy = np.flatnonzero(evac_busy[cur:window_end] > 0) if cur < window_end else []
                 if len(busy) == 0:
                     segments.append((cur, cur + remaining))
@@ -2250,7 +2300,7 @@ with tab3:
                         segments.append((cur, next_conflict))
                         remaining -= next_conflict - cur
                     cur = next_conflict
-                    while cur < TOTAL_MINUTES and evac_busy[cur] > 0:
+                    while cur < horizon and evac_busy[cur] > 0:
                         cur += 1
             return segments
 
@@ -2268,11 +2318,11 @@ with tab3:
                     continue
                 old_end = old[-1][2]
                 for seg in old:
-                    resource_usage["Cooling"][seg[1]:min(seg[2], TOTAL_MINUTES)] -= 1
+                    resource_usage["Cooling"][seg[1]:min(seg[2], horizon)] -= 1
                     phases.remove(seg)
                 new_segments = cooling_segments_from(c_start, c_dur)
                 for ns, ne in new_segments:
-                    resource_usage["Cooling"][ns:min(ne, TOTAL_MINUTES)] += 1
+                    resource_usage["Cooling"][ns:min(ne, horizon)] += 1
                     phases.append(["Cooling", ns, ne])
                 evac_cool_stats["cooling_delay_events"] += 1
                 evac_cool_stats["cooling_delay_minutes"] += new_segments[-1][1] - old_end
@@ -2284,21 +2334,21 @@ with tab3:
             mod = min(active, key=lambda m: (module_timers[m], module_last_chain_end[m], m))
             open_cooling.pop(mod, None)
             t = module_timers[mod]
+            if t >= TOTAL_MINUTES:
+                active.discard(mod)
+                continue
             group_id = group_of[mod]
             phases_this_cycle = (
                 PHASES[1:] if group_id in preloaded_groups and not module_first_cycle_done[mod] else PHASES
             )
             idx = module_phase_idx[mod]
-            if idx == 0:
-                module_cycles[mod].append({"phases": [], "done": False})
-            cycle = module_cycles[mod][-1]["phases"]
             phase = phases_this_cycle[idx]
 
             if phase == CHAIN[0]:
                 layout, start = None, t
-                while True:
+                while start < TOTAL_MINUTES:
                     candidate = chain_layout(start, group_id)
-                    if candidate[-1][2] > TOTAL_MINUTES:
+                    if candidate[-1][2] > horizon:
                         break
                     if chain_fits(candidate, group_id):
                         layout = candidate
@@ -2307,18 +2357,18 @@ with tab3:
                 if layout is None:
                     active.discard(mod)
                     continue
+                booked = [[p, s, e] for p, s, e in layout]
                 for p, s, e in layout:
                     reserve_internal(p, s, e - s, resource_usage)
-                    chain_by_group[group_id][s:min(e, TOTAL_MINUTES)] += 1
-                    cycle.append([p, s, e])
+                    chain_by_group[group_id][s:min(e, horizon)] += 1
                 module_last_chain_end[mod] = layout[-1][2]
-                module_timers[mod] = layout[-1][2] + gap_after(CHAIN[-1])
-                module_phase_idx[mod] = idx + len(CHAIN)
+                next_timer = layout[-1][2] + gap_after(CHAIN[-1])
+                steps = len(CHAIN)
 
             elif phase == "Cooling":
                 duration = phase_duration(group_id, "Cooling")
                 attempt_start, conflict_hit, placed = t, False, False
-                while attempt_start + duration <= TOTAL_MINUTES:
+                while attempt_start < TOTAL_MINUTES and attempt_start + duration <= horizon:
                     if evac_cool_conflict_internal("Cooling", attempt_start, duration, resource_usage, mod):
                         # Cooling can't start during another module's Evacuation; jump
                         # ahead by the other group's Evacuation duration and retry.
@@ -2341,48 +2391,57 @@ with tab3:
                     active.discard(mod)
                     continue
                 segments = cooling_segments_from(attempt_start, duration)
+                booked = [["Cooling", s, e] for s, e in segments]
                 for s, e in segments:
                     reserve_internal("Cooling", s, e - s, resource_usage)
-                    cycle.append(["Cooling", s, e])
                 open_cooling[mod] = (attempt_start, duration)
-                module_timers[mod] = segments[-1][1]
-                module_phase_idx[mod] = idx + 1
+                next_timer = segments[-1][1]
+                steps = 1
 
             else:
                 duration = phase_duration(group_id, phase)
                 attempt_start = t
-                while (attempt_start + duration <= TOTAL_MINUTES
+                while (attempt_start < TOTAL_MINUTES and attempt_start + duration <= horizon
                        and not can_allocate_internal(phase, attempt_start, duration, resource_usage)):
                     attempt_start += 1
-                if attempt_start + duration > TOTAL_MINUTES:
+                if attempt_start >= TOTAL_MINUTES or attempt_start + duration > horizon:
                     active.discard(mod)
                     continue
                 reserve_internal(phase, attempt_start, duration, resource_usage)
-                cycle.append([phase, attempt_start, attempt_start + duration])
-                module_timers[mod] = attempt_start + duration + gap_after(phase)
-                module_phase_idx[mod] = idx + 1
-                if phase == "Evacuation" and allow_cooling_pause:
-                    pause_overlapping_cooling(mod, attempt_start, attempt_start + duration)
+                booked = [[phase, attempt_start, attempt_start + duration]]
+                next_timer = attempt_start + duration + gap_after(phase)
+                steps = 1
+
+            if idx == 0:
+                module_cycles[mod].append({"phases": [], "done": False, "full": len(phases_this_cycle) == len(PHASES)})
+            module_cycles[mod][-1]["phases"].extend(booked)
+            module_timers[mod] = next_timer
+            module_phase_idx[mod] = idx + steps
+            if phase == "Evacuation" and allow_cooling_pause:
+                pause_overlapping_cooling(mod, booked[0][1], booked[0][2])
 
             if module_phase_idx[mod] >= len(phases_this_cycle):
                 module_cycles[mod][-1]["done"] = True
                 module_phase_idx[mod] = 0
                 module_first_cycle_done[mod] = True
 
-        # Only keep cycles that finished inside the operating period; release the
-        # capacity held by any cycle cut off at the end.
+        # Everything that started inside the operating period is shown (clipped at
+        # its end); "Complete" marks the full cycles that also finished inside it,
+        # which are the only ones counted toward cycles, yield and energy.
         schedule = []
         for mod in modules:
-            for c in module_cycles[mod]:
-                if c["done"] and all(end <= TOTAL_MINUTES for _, _, end in c["phases"]):
-                    for phase, start, end in c["phases"]:
-                        schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
-                else:
-                    for phase, start, end in c["phases"]:
-                        resource_usage[phase][start:min(end, TOTAL_MINUTES)] -= 1
+            for cycle_no, c in enumerate(module_cycles[mod]):
+                complete = c["done"] and c["full"] and all(end <= TOTAL_MINUTES for _, _, end in c["phases"])
+                for phase, start, end in c["phases"]:
+                    if start < TOTAL_MINUTES:
+                        schedule.append({
+                            "Module": mod, "Phase": phase, "Start": start, "End": min(end, TOTAL_MINUTES),
+                            "Cycle": cycle_no, "Complete": complete,
+                        })
 
         if not schedule:
-            return pd.DataFrame(columns=["Module", "Phase", "Start", "End"]), resource_usage, evac_cool_stats
+            empty = pd.DataFrame(columns=["Module", "Phase", "Start", "End", "Cycle", "Complete"])
+            return empty, resource_usage, evac_cool_stats
         df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start']).reset_index(drop=True)
         return df_schedule, resource_usage, evac_cool_stats
 
@@ -2406,22 +2465,13 @@ with tab3:
         optimization_summary_df = None
 
         def count_complete_cycles_df(df_schedule):
-            """Count each module's completed cycles by sliding a window over its scheduled
-            phases and matching it against the full PHASES order; returns one row per
-            module with a "M<n>"-formatted label."""
+            """Count each module's complete cycles (full Adsorption→Cooling cycles that
+            finished inside the operating period, as flagged by run_simulation); returns
+            one row per module with a "M<n>"-formatted label."""
             cycle_counts = []
             for mod in MODULES:
-                mod_df = df_schedule[df_schedule["Module"] == mod].sort_values(by="Start").reset_index(drop=True)
-                count = 0
-                i = 0
-                while i <= len(mod_df) - len(PHASES):
-                    window = mod_df.iloc[i:i+len(PHASES)]
-                    if list(window["Phase"]) == PHASES:
-                        count += 1
-                        i += len(PHASES)
-                    else:
-                        i += 1
-                cycle_counts.append({"Module": mod, "Complete Cycles": count})
+                mod_df = df_schedule[(df_schedule["Module"] == mod) & df_schedule["Complete"]]
+                cycle_counts.append({"Module": mod, "Complete Cycles": int(mod_df["Cycle"].nunique())})
             df_cycles = pd.DataFrame(cycle_counts)
             df_cycles["Module"] = df_cycles["Module"].apply(lambda m: f"M{m}")
             return df_cycles
@@ -2526,6 +2576,7 @@ with tab3:
                 mods_in_group = [m for m in MODULES if GROUP_OF[m] == gid]
                 ads = schedule_df[
                     schedule_df["Module"].isin(mods_in_group) & (schedule_df["Phase"] == "Adsorption")
+                    & schedule_df["Complete"]
                 ]
                 intervals = [
                     (max(0, s), min(TOTAL_MINUTES, e))
@@ -2798,7 +2849,7 @@ with tab3:
 
         # Diagnostic: Adsorption durations by module
         groups_equal = PHASE_DURATIONS_BY_GROUP[GROUP_IDS[0]] == PHASE_DURATIONS_BY_GROUP[GROUP_IDS[1]]
-        ads_df = schedule_int[schedule_int["Phase"] == "Adsorption"].copy()
+        ads_df = schedule_int[(schedule_int["Phase"] == "Adsorption") & schedule_int["Complete"]].copy()
         if len(ads_df) > 0:
             ads_df["Duration"] = ads_df["End"] - ads_df["Start"]
             ads_summary = ads_df.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
@@ -2813,7 +2864,7 @@ with tab3:
                         st.warning(f"Modules {list(deviants_int.index)} have Adsorption ≠ {expected} min")
                 with diag_col2:
                     st.caption("Concurrent")
-                    ads_conc = schedule_conc[schedule_conc["Phase"] == "Adsorption"].copy()
+                    ads_conc = schedule_conc[(schedule_conc["Phase"] == "Adsorption") & schedule_conc["Complete"]].copy()
                     if len(ads_conc) > 0:
                         ads_conc["Duration"] = ads_conc["End"] - ads_conc["Start"]
                         ads_conc_summary = ads_conc.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
@@ -2860,6 +2911,22 @@ with tab3:
                 st.caption("Interleaved")
                 st.dataframe(util_int, use_container_width=True, hide_index=True)
             st.caption("Active = time in any phase. Idle = waiting/unused time.")
+
+        st.markdown("#### What the idle time is spent waiting for")
+        st.caption(
+            "Average idle minutes per module in each group, split by cause. Each column adds up "
+            "to that group's average Idle (min) in the utilisation tables."
+        )
+        idle_units = {f"Group {gid}": [m for m in MODULES if GROUP_OF[m] == gid] for gid in GROUP_IDS}
+        idle_col1, idle_col2 = st.columns(2)
+        with idle_col1:
+            st.caption("Concurrent")
+            st.dataframe(idle_breakdown_table(schedule_conc, "Module", idle_units, TOTAL_MINUTES),
+                         use_container_width=True, hide_index=True)
+        with idle_col2:
+            st.caption("Interleaved")
+            st.dataframe(idle_breakdown_table(schedule_int, "Module", idle_units, TOTAL_MINUTES),
+                         use_container_width=True, hide_index=True)
 
         # Add Avg Idle/Utilisation to the Concurrent/Interleaved entries already
         # published above, for the Yield vs Cycles tab's idle-time summary.
@@ -3734,241 +3801,210 @@ with tab4:
 
     def run_advanced_interleaved(pairs, phase_durations_by_pair, total_minutes, enforce_evac_cool, free_adsorption_overlap=False):
         """
-        Advanced interleaved scheduler. Builds a schedule by repeatedly giving each
-        pair its next phase group as soon as that phase group's shared resource is
-        free, until nothing more can be scheduled before total_minutes runs out.
+        Advanced interleaved scheduler, with whole pairs scheduled as single units.
 
         Sequence per pair:
         Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging -> Cooling -> Repressurization
 
-        Rules actually enforced below:
+        Same approach as the Full Schedule Analysis tab: pairs are advanced in time
+        order, one phase at a time, so every shared resource is first-come-first-
+        served and no pair is favored (on a tie, whichever pair held the NCG ->
+        Heating -> CO2 block longest ago goes first). Rules:
         - Adsorption overlap: if free_adsorption_overlap is False (the original
           3-pair rule, requires exactly 3 pairs), pairs[0] can overlap Adsorption
           with pairs[1]/pairs[2], but pairs[1] and pairs[2] cannot overlap each
-          other's Adsorption. If True (used for configurations with more than 3
-          pairs, where that specific 3-pair fan-sharing constraint doesn't apply
-          or isn't known), every pair's Adsorption can overlap freely with every
-          other pair's.
-        - Only one pair can be in the Desorption chain (Evacuation..CO2 Purging) at a time
-          — tracked via resource_ready_time["Desorption"].
-        - Only one pair can be in Cooling at a time — tracked via
-          resource_ready_time["Cooling"] — but a pair's Cooling will pause (see below)
-          rather than wait outright if another pair's Evacuation overlaps it.
-        - Only one pair can be in Repressurization at a time — tracked via
-          resource_ready_time["Repressurization"].
+          other's Adsorption. If True, every pair's Adsorption overlaps freely.
+        - Evacuation: one pair at a time.
+        - NCG Purging -> Heating -> CO2 Purging: booked as one unbroken block, one
+          pair at a time. A pair can evacuate while another holds the block, then waits.
+        - Cooling: one pair at a time. If enforce_evac_cool, another pair's
+          Evacuation pauses it (including an Evacuation booked after the Cooling).
+        - Repressurization: one pair at a time.
 
-        Different pairs start staggered into different phase groups (see
-        pair_next_phase below) precisely so they don't all compete for the same
-        shared resource at once.
+        Pairs start staggered into different phase groups (see next_step) so they
+        don't all compete for the same resource at once. A phase may start any time
+        before total_minutes and run past it (the plant keeps going into the next
+        day): rows are clipped at total_minutes, and "Complete" marks the full
+        cycles (Adsorption through Repressurization) that finished inside the period.
         """
-
-        schedule = []
+        horizon = 2 * total_minutes + 1
         if not free_adsorption_overlap:
             pair_a, pair_b, pair_c = pairs
+        CHAIN = ["NCG Purging", "Heating", "CO2 Purging"]
+        STAGGER_STEPS = ["Adsorption", "Evacuation", "Cooling", "Repressurization"]
+        next_step = {pair: STAGGER_STEPS[i % len(STAGGER_STEPS)] for i, pair in enumerate(pairs)}
+        order = {pair: i for i, pair in enumerate(pairs)}
+        ready = {pair: 0 for pair in pairs}
+        last_chain_end = {pair: -1 for pair in pairs}
 
-        DESORPTION_CHAIN = [
-            "Evacuation",
-            "NCG Purging",
-            "Heating",
-            "CO2 Purging"
-        ]
+        cycles = {pair: [] for pair in pairs}  # each: {"phases": [[phase, start, end], ...], "full", "done"}
+        ads_busy = {pair: [] for pair in pairs}
+        evac_busy = []  # (start, end, pair)
+        chain_busy, repress_busy = [], []
+        cooling_entries = []  # {"pair", "seq", "request", "segments", "cycle"}
+        open_cooling = {}  # pair -> its latest cooling entry, while a later Evacuation can still pause it
 
-        # Stagger pairs across different phase groups from the start, so they
-        # aren't all trying to claim the same shared resource in the first pass.
-        # Cycles through the 3 shared plant resources plus Adsorption, so any
-        # number of pairs gets spread across all 4 starting points.
-        STAGGER_PHASES = ["Adsorption", "Desorption", "Cooling", "Repressurization"]
-        pair_next_phase = {pair: STAGGER_PHASES[i % len(STAGGER_PHASES)] for i, pair in enumerate(pairs)}
+        def earliest_fit(intervals, start, duration):
+            while True:
+                conflict = [b for a, b in intervals if a < start + duration and start < b]
+                if not conflict:
+                    return start
+                start = max(conflict)
 
-        # Each pair's own local clock: the earliest minute IT is free to start its
-        # next phase (independent of whether the shared resource for that phase is free).
-        pair_ready_time = {pair: 0 for pair in pairs}
+        def cooling_segments(pair, start, duration):
+            evacs = sorted((s, e) for s, e, p in evac_busy if p != pair) if enforce_evac_cool else []
+            segments, remaining, cur = [], duration, start
+            while remaining > 0:
+                blocking = next((e for s, e in evacs if s <= cur < e), None)
+                if blocking is not None:
+                    cur = blocking
+                    continue
+                upcoming = next((s for s, e in evacs if s > cur), None)
+                run_end = cur + remaining
+                if upcoming is not None and upcoming < run_end:
+                    run_end = upcoming
+                segments.append((cur, run_end))
+                remaining -= run_end - cur
+                cur = run_end
+            return segments
 
-        # Shared, plant-wide resources: the earliest minute each one is free for the
-        # NEXT pair to use, regardless of which pair is asking.
-        resource_ready_time = {
-            "Desorption": 0,
-            "Cooling": 0,
-            "Repressurization": 0,
-        }
+        def place_cooling(pair, start, others, limit):
+            duration = phase_durations_by_pair[pair]["Cooling"]
+            while start < limit:
+                segs = cooling_segments(pair, start, duration)
+                a, b = segs[0][0], segs[-1][1]
+                if not any(x < b and a < y for x, y in others):
+                    return segs
+                start += 1
+            return None
 
-        # Main loop: sweep the pairs, advancing each by one phase group per pass,
-        # until a full pass makes no progress (every pair is either done or blocked by
-        # the operating-period limit).
-        while True:
-            progress = False
+        def repack_coolings(evac_pair, s, e):
+            """A newly booked Evacuation pauses any other pair's Cooling running
+            across it. Re-place every still-open Cooling that ends after `s` (in the
+            order they were booked) so they stay one-at-a-time around the longer
+            pauses. Safe because those pairs' next phases aren't scheduled yet."""
+            affected = [en for p, en in open_cooling.items() if p != evac_pair and en["segments"][-1][1] > s]
+            if not any(a < e and s < b for en in affected for a, b in en["segments"]):
+                return
+            affected_ids = {id(en) for en in affected}
+            fixed = [(en["segments"][0][0], en["segments"][-1][1]) for en in cooling_entries if id(en) not in affected_ids]
+            for en in sorted(affected, key=lambda en: en["seq"]):
+                segs = place_cooling(en["pair"], max(en["request"], en["segments"][0][0]), fixed, horizon) or en["segments"]
+                cyc = en["cycle"]
+                cyc["phases"] = [r for r in cyc["phases"] if r[0] != "Cooling"] + [["Cooling", a, b] for a, b in segs]
+                en["segments"] = segs
+                fixed.append((segs[0][0], segs[-1][1]))
+                ready[en["pair"]] = segs[-1][1]
 
-            for pair in pairs:
-                phase_group = pair_next_phase[pair]
+        active = set(pairs)
+        seq = 0
+        while active:
+            pair = min(active, key=lambda p: (ready[p], last_chain_end[p], order[p]))
+            open_cooling.pop(pair, None)
+            t = ready[pair]
+            if t >= total_minutes:
+                active.discard(pair)
+                continue
+            step = next_step[pair]
+            d = phase_durations_by_pair[pair]
+            cooling_entry = None
 
-                if phase_group == "Adsorption":
-                    duration = phase_durations_by_pair[pair]["Adsorption"]
+            if step == "Adsorption":
+                start = t
+                if not free_adsorption_overlap and pair in (pair_b, pair_c):
+                    blocking_pair = pair_c if pair == pair_b else pair_b
+                    start = earliest_fit(ads_busy[blocking_pair], start, d["Adsorption"])
+                end = start + d["Adsorption"]
+                booked = [["Adsorption", start, end]]
+                after = "Evacuation"
 
-                    # pair_a can overlap with pair_b and pair_c.
-                    # pair_b and pair_c cannot overlap each other.
-                    # (Skipped entirely when free_adsorption_overlap is True.)
-                    start = pair_ready_time[pair]
+            elif step == "Evacuation":
+                start = earliest_fit([(s, e) for s, e, _ in evac_busy], t, d["Evacuation"])
+                end = start + d["Evacuation"]
+                booked = [["Evacuation", start, end]]
+                after = "Chain"
 
-                    if not free_adsorption_overlap and pair in (pair_b, pair_c):
-                        blocking_pair = pair_c if pair == pair_b else pair_b
-                        for row in schedule:
-                            if row["Phase"] == "Adsorption" and row["Pair"] == blocking_pair:
-                                if start < row["End"] and start + duration > row["Start"]:
-                                    start = row["End"]
+            elif step == "Chain":
+                total_chain = sum(d[p] for p in CHAIN)
+                start = earliest_fit(chain_busy, t, total_chain)
+                end = start + total_chain
+                booked, cursor = [], start
+                for p in CHAIN:
+                    if d[p] > 0:
+                        booked.append([p, cursor, cursor + d[p]])
+                    cursor += d[p]
+                after = "Cooling"
 
-                    end = start + duration
-
-                    if end > total_minutes:
+            elif step == "Cooling":
+                if d["Cooling"] > 0:
+                    others = [(en["segments"][0][0], en["segments"][-1][1]) for en in cooling_entries]
+                    segs = place_cooling(pair, t, others, total_minutes)
+                    if segs is None:
+                        active.discard(pair)
                         continue
+                    start, end = segs[0][0], segs[-1][1]
+                    booked = [["Cooling", a, b] for a, b in segs]
+                    cooling_entry = {"pair": pair, "seq": seq, "request": t, "segments": segs}
+                else:
+                    start = end = t
+                    booked = []
+                after = "Repressurization"
 
-                    schedule.append({
-                        "Pair": pair,
-                        "Phase": "Adsorption",
-                        "Start": start,
-                        "End": end
-                    })
+            else:  # Repressurization
+                start = earliest_fit(repress_busy, t, d["Repressurization"])
+                end = start + d["Repressurization"]
+                booked = [["Repressurization", start, end]]
+                after = "Adsorption"
 
-                    pair_ready_time[pair] = end
-                    pair_next_phase[pair] = "Desorption"
-                    progress = True
+            if start >= total_minutes:
+                active.discard(pair)
+                continue
 
-                elif phase_group == "Desorption":
-                    # Earliest this pair can start is whichever is later: its own
-                    # readiness, or the shared Desorption resource being free.
-                    earliest_start = max(pair_ready_time[pair], resource_ready_time["Desorption"])
-                    start = earliest_start
+            if step == "Adsorption" or not cycles[pair]:
+                cycles[pair].append({"phases": [], "full": step == "Adsorption", "done": False})
+            cycle = cycles[pair][-1]
+            cycle["phases"].extend(booked)
+            seq += 1
 
-                    # Schedule the whole Evacuation -> NCG Purging -> Heating -> CO2
-                    # Purging chain back-to-back as one block; the shared "Desorption"
-                    # resource is held for its full total_desorption_duration.
-                    phase_start = start
-                    total_desorption_duration = sum(
-                        phase_durations_by_pair[pair][phase]
-                        for phase in DESORPTION_CHAIN
-                    )
+            if step == "Adsorption":
+                ads_busy[pair].append((start, end))
+            elif step == "Evacuation":
+                evac_busy.append((start, end, pair))
+                if enforce_evac_cool and end > start:
+                    repack_coolings(pair, start, end)
+            elif step == "Chain":
+                chain_busy.append((start, end))
+                last_chain_end[pair] = end
+            elif step == "Cooling" and cooling_entry is not None:
+                cooling_entry["cycle"] = cycle
+                cooling_entries.append(cooling_entry)
+                open_cooling[pair] = cooling_entry
+            elif step == "Repressurization":
+                repress_busy.append((start, end))
+                cycle["done"] = True
 
-                    end = start + total_desorption_duration
+            ready[pair] = end
+            next_step[pair] = after
 
-                    if end > total_minutes:
-                        continue
-
-                    for phase in DESORPTION_CHAIN:
-                        duration = phase_durations_by_pair[pair][phase]
-
-                        if duration > 0:
-                            schedule.append({
-                                "Pair": pair,
-                                "Phase": phase,
-                                "Start": phase_start,
-                                "End": phase_start + duration
-                            })
-
-                        phase_start += duration
-
-                    pair_ready_time[pair] = end
-                    resource_ready_time["Desorption"] = end
-                    pair_next_phase[pair] = "Cooling"
-                    progress = True
-
-                elif phase_group == "Cooling":
-                    start = max(pair_ready_time[pair], resource_ready_time["Cooling"])
-                    duration = phase_durations_by_pair[pair]["Cooling"]
-
-                    # Evacuation gets priority over Cooling: if another pair's Evacuation
-                    # overlaps the Cooling window, Cooling pauses and resumes with its
-                    # remaining duration as soon as that Evacuation ends.
-                    other_evac_events = sorted(
-                        (row for row in schedule
-                         if row["Phase"] == "Evacuation" and row["Pair"] != pair),
-                        key=lambda r: r["Start"]
-                    ) if enforce_evac_cool else []
-
-                    cooling_segments = []
-                    remaining = duration
-                    current_start = start
-
-                    while remaining > 0:
-                        # Is current_start inside an Evacuation window? If so, jump past it.
-                        blocking = next(
-                            (row for row in other_evac_events
-                             if row["Start"] <= current_start < row["End"]),
-                            None
-                        )
-                        if blocking is not None:
-                            current_start = blocking["End"]
-                            continue
-
-                        # Run until the next upcoming Evacuation start, or until done.
-                        next_evac_start = next(
-                            (row["Start"] for row in other_evac_events
-                             if row["Start"] > current_start),
-                            None
-                        )
-                        run_end = current_start + remaining
-                        if next_evac_start is not None and next_evac_start < run_end:
-                            run_end = next_evac_start
-
-                        if run_end > current_start:
-                            cooling_segments.append((current_start, run_end))
-                            remaining -= (run_end - current_start)
-                        current_start = run_end
-
-                    end = cooling_segments[-1][1]
-
-                    if end > total_minutes:
-                        continue
-
-                    for seg_start, seg_end in cooling_segments:
-                        schedule.append({
-                            "Pair": pair,
-                            "Phase": "Cooling",
-                            "Start": seg_start,
-                            "End": seg_end
+        rows = []
+        for pair in pairs:
+            for cycle_no, c in enumerate(cycles[pair]):
+                complete = c["done"] and c["full"] and all(e <= total_minutes for _, _, e in c["phases"])
+                for phase, s, e in sorted(c["phases"], key=lambda r: r[1]):
+                    if s < total_minutes:
+                        rows.append({
+                            "Pair": pair, "Phase": phase, "Start": s, "End": min(e, total_minutes),
+                            "Cycle": cycle_no, "Complete": complete,
                         })
-
-                    pair_ready_time[pair] = end
-                    resource_ready_time["Cooling"] = end
-                    pair_next_phase[pair] = "Repressurization"
-                    progress = True
-
-                elif phase_group == "Repressurization":
-                    # Final phase of the cycle; frees the pair back to Adsorption once done.
-                    start = max(pair_ready_time[pair], resource_ready_time["Repressurization"])
-                    duration = phase_durations_by_pair[pair]["Repressurization"]
-                    end = start + duration
-
-                    if end > total_minutes:
-                        continue
-
-                    schedule.append({
-                        "Pair": pair,
-                        "Phase": "Repressurization",
-                        "Start": start,
-                        "End": end
-                    })
-
-                    pair_ready_time[pair] = end
-                    resource_ready_time["Repressurization"] = end
-                    pair_next_phase[pair] = "Adsorption"
-                    progress = True
-
-            if not progress:
-                break
-
-        return pd.DataFrame(schedule)
+        return pd.DataFrame(rows, columns=["Pair", "Phase", "Start", "End", "Cycle", "Complete"])
 
     def _complete_cycles_and_yield_energy(schedule_df, pairs, yield_per_cycle, energy_per_cycle):
         """Shared logic for both configurations: count each pair's complete cycles
         from its scheduled rows, then multiply by its per-cycle rates."""
         rows = []
         for pair in pairs:
-            pair_df = schedule_df[schedule_df["Pair"] == pair]
-            # Each full cycle contributes one scheduled row per phase in PHASES, so
-            # total rows / phase count gives the completed-cycle count. Note: if a
-            # Cooling phase got split into multiple segments (paused for another
-            # pair's Evacuation), that cycle has one extra row, which can make this
-            # a slight undercount versus the true cycle count.
-            cycles = len(pair_df) // len(PHASES)
+            pair_df = schedule_df[(schedule_df["Pair"] == pair) & schedule_df["Complete"]]
+            cycles = int(pair_df["Cycle"].nunique())
             total_yield = cycles * yield_per_cycle.get(pair, 0.0)
             total_energy = cycles * energy_per_cycle.get(pair, 0.0)
             rows.append({
@@ -4006,6 +4042,13 @@ with tab4:
                 "Adsorption Utilisation %": round(100 * ads_time / total_minutes, 1) if total_minutes > 0 else 0,
             })
         return pd.DataFrame(rows)
+
+    def _show_idle_breakdown(schedule_df, pairs):
+        st.caption("What each pair's idle time is spent waiting for (adds up to its Idle (min) above).")
+        st.dataframe(
+            idle_breakdown_table(schedule_df, "Pair", {pair: [pair] for pair in pairs}, TOTAL_MINUTES_ADV),
+            use_container_width=True, hide_index=True,
+        )
 
     def _draw_idle_chart(utilization_df, title):
         """Bar chart of each pair's Idle (min) — the empty stretches where that
@@ -4060,6 +4103,7 @@ with tab4:
         util_df = _pair_utilization(adv_schedule, PAIRS, TOTAL_MINUTES_ADV)
         st.dataframe(util_df, use_container_width=True, hide_index=True)
         _draw_idle_chart(util_df, "Idle Time per Pair — 6-6-4 Configuration")
+        _show_idle_breakdown(adv_schedule, PAIRS)
 
         # Publish totals for the Yield vs Cycles comparison tab. Only refreshes when
         # this "Generate" button is (re)clicked — see that tab's caption for why.
@@ -4095,6 +4139,7 @@ with tab4:
         util_df_844 = _pair_utilization(adv_schedule_844, PAIRS_8_4_4, TOTAL_MINUTES_ADV)
         st.dataframe(util_df_844, use_container_width=True, hide_index=True)
         _draw_idle_chart(util_df_844, "Idle Time per Pair — 8-4-4 Configuration")
+        _show_idle_breakdown(adv_schedule_844, PAIRS_8_4_4)
 
         # Publish 8-4-4 totals too, alongside the 6-6-4 entry above.
         st.session_state["process_comparison"]["Advanced Interleaved (8-4-4)"] = {
@@ -4128,6 +4173,7 @@ with tab4:
         util_df_655 = _pair_utilization(adv_schedule_655, PAIRS_6_5_5, TOTAL_MINUTES_ADV)
         st.dataframe(util_df_655, use_container_width=True, hide_index=True)
         _draw_idle_chart(util_df_655, "Idle Time per Pair — 6-5-5 Configuration")
+        _show_idle_breakdown(adv_schedule_655, PAIRS_6_5_5)
 
         st.session_state["process_comparison"]["Advanced Interleaved (6-5-5)"] = {
             "Total Cycles": int(yield_energy_df_655["Complete Cycles"].sum()),
@@ -4163,6 +4209,7 @@ with tab4:
         util_df_4x4 = _pair_utilization(adv_schedule_4x4, PAIRS_4X4, TOTAL_MINUTES_ADV)
         st.dataframe(util_df_4x4, use_container_width=True, hide_index=True)
         _draw_idle_chart(util_df_4x4, "Idle Time per Pair — 4-4-4-4 Configuration")
+        _show_idle_breakdown(adv_schedule_4x4, PAIRS_4X4)
 
         st.session_state["process_comparison"]["Advanced Interleaved (4-4-4-4)"] = {
             "Total Cycles": int(yield_energy_df_4x4["Complete Cycles"].sum()),
@@ -4195,6 +4242,7 @@ with tab4:
         util_df_n3n4 = _pair_utilization(adv_schedule_n3n4, PAIRS_N3N4, TOTAL_MINUTES_ADV)
         st.dataframe(util_df_n3n4, use_container_width=True, hide_index=True)
         _draw_idle_chart(util_df_n3n4, "Idle Time per Pair — 2-2-2-2 (N3/N4) Configuration")
+        _show_idle_breakdown(adv_schedule_n3n4, PAIRS_N3N4)
 
         st.session_state["process_comparison"]["Advanced Interleaved (2-2-2-2 N3/N4)"] = {
             "Total Cycles": int(yield_energy_df_n3n4["Complete Cycles"].sum()),
