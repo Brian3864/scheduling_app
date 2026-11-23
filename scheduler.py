@@ -579,7 +579,7 @@ Customize:
 Stage-based visualization for paired modules.
 
 **Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; both are now directly recorded combinations in their own right, so Group A's Duration/Energy come from N3N4-M1n3's own real average and Group B's from N3N4-M2n4's own real average — no more borrowing Group A's number for Group B — while Yield stays module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own real averages; only cycles logged on or after 2026-11-18 feed these defaults), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
+- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; both are now directly recorded combinations in their own right, so Group A's Duration, Energy and Yield all come from N3N4-M1n3's own real average and Group B's from N3N4-M2n4's own real average — no more borrowing Group A's number for Group B, and no more type-matched sum for Yield either; only cycles logged on or after 2026-11-18 feed these defaults), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, and phase breakdown (total minutes per phase), for both configurations
@@ -1644,13 +1644,12 @@ with tab3:
     # comparison. Group A = N3&N4's M1&M3, Group B = N3&N4's M2&M4. Both are now
     # directly recorded 4-module combinations in their own right (N3N4-M1n3 for
     # Group A, N3N4-M2n4 for Group B — Nelion 4 brought both position types
-    # online), so each group's Duration and Energy come straight from its own
-    # exact real average, no more proxying Group B off Group A's number. Yield
-    # per Cycle instead stays module-type-matched: Group A from N3N4-M1n3, Group
-    # B from the weighted sum of N3-M2n4's and N4-M2n4's own real per-module
-    # averages, since Yield is the figure most sensitive to M1n3- vs M2n4-type
-    # behavior. Shares the Operating Period and Evacuation/Cooling behavior
-    # checkboxes with the 8-8 config above, since those are plant-wide settings.
+    # online), so each group's Duration, Energy AND Yield all come straight from
+    # its own exact real average -- no more proxying Group B off Group A's
+    # number, and no more type-matched sum for Yield either, now that there's a
+    # real combined reading to use directly. Shares the Operating Period and
+    # Evacuation/Cooling behavior checkboxes with the 8-8 config above, since
+    # those are plant-wide settings.
     st.markdown("### 4-4 Configuration")
     st.caption(
         "A second, smaller full-schedule analysis: an 8-module plant split into two "
@@ -1658,10 +1657,9 @@ with tab3:
         "run through the same Concurrent/Interleaved engine for side-by-side "
         "comparison. Both pairs are now directly recorded combinations in their own "
         "right (N3N4-M1n3 for Group A, N3N4-M2n4 for Group B), so each group's "
-        "Duration and Energy come straight from its own exact real average — no "
-        "more borrowing Group A's number for Group B. Yield per Cycle instead stays "
-        "module-type-matched: Group A from N3N4-M1n3, Group B from the weighted sum "
-        "of N3-M2n4's and N4-M2n4's own real averages."
+        "Duration, Energy and Yield all come straight from its own exact real "
+        "average — no more borrowing Group A's number for Group B, and no more "
+        "type-matched sum for Yield either."
     )
     TAB3_44_TOTAL_MODULES = 8
     MODULES_44 = list(range(1, TAB3_44_TOTAL_MODULES + 1))
@@ -1671,10 +1669,10 @@ with tab3:
     # config's Duration/Energy/Yield defaults, to reflect a process change made
     # on the plant around then rather than being diluted by older behavior.
     TAB3_44_DATA_SINCE = pd.Timestamp("2026-11-18")
-    TAB3_44_YIELD_FORMULA = {"A": [("N3N4-M1n3", 1)], "B": [("N3-M2n4", 1), ("N4-M2n4", 1)]}
-    # Both groups' real physical modules now match their Duration/Energy source
-    # exactly (Group A = N3N4-M1n3's own decode, Group B = N3N4-M2n4's own
-    # decode) -- no represents_map needed below, same as the 2-2 config.
+    TAB3_44_YIELD_FORMULA = {"A": [("N3N4-M1n3", 1)], "B": [("N3N4-M2n4", 1)]}
+    # Both groups' real physical modules now match their Duration/Energy/Yield
+    # source exactly (Group A = N3N4-M1n3's own decode, Group B = N3N4-M2n4's
+    # own decode) -- no represents_map needed below, same as the 2-2 config.
     PAIR_PHYSICAL_MODULES_TAB3_44 = {
         "A": ["N3-M1", "N3-M3", "N4-M1", "N4-M3"],
         "B": ["N3-M2", "N3-M4", "N4-M2", "N4-M4"],
@@ -1752,13 +1750,12 @@ with tab3:
         ["A", "B"], TAB3_44_MODULE_MAP, TAB3_44_YIELD_FORMULA, since=TAB3_44_DATA_SINCE,
     )
     st.caption(
-        f"Group A's Energy comes from N3N4-M1n3's own real average, Group B's from "
-        f"N3N4-M2n4's own real average; Yield instead stays module-type-matched: Group A "
-        f"from N3N4-M1n3, Group B from the weighted sum of N3-M2n4's and N4-M2n4's own "
-        f"real averages: {default_energy_yield_44}. Only cycles on or after "
-        f"{TAB3_44_DATA_SINCE.date()} are averaged. Edit per pair if a pair's real output differs."
+        f"Both Energy and Yield now come from each group's own exact real average -- "
+        f"Group A from N3N4-M1n3, Group B from N3N4-M2n4: {default_energy_yield_44}. "
+        f"Only cycles on or after {TAB3_44_DATA_SINCE.date()} are averaged. Edit per pair "
+        f"if a pair's real output differs."
     )
-    ENERGY_YIELD_TAB3_44_VERSION = 3
+    ENERGY_YIELD_TAB3_44_VERSION = 4
     get_versioned_default_table(
         "energy_yield_tab3_44", ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"], ENERGY_YIELD_TAB3_44_VERSION,
         lambda: pd.DataFrame({
