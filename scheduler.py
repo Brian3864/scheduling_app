@@ -3917,7 +3917,7 @@ with tab5:
             opex_col1, opex_col2, opex_col3 = st.columns(3)
             with opex_col1:
                 cost_per_kwh = st.number_input(
-                    "Electricity cost ($ per kWh)", min_value=0.0, value=0.15, step=0.01,
+                    "Electricity cost ($ per kWh)", min_value=0.0, value=0.18, step=0.01,
                     help="Used below to convert each process's Total Energy into an OPEX line. "
                          "Adjust to your actual electricity tariff.",
                     key="cost_per_kwh_tab5",
@@ -3931,16 +3931,16 @@ with tab5:
                 )
             with opex_col3:
                 cost_per_m3 = st.number_input(
-                    "Water cost ($ per m³)", min_value=0.0, value=32.0 / 5.5, step=0.01,
+                    "Water cost ($ per m³)", min_value=0.0, value=4.62, step=0.01,
                     help="Cost per cubic metre of water (1 m³ = 1000 L). Adjust to your actual "
                          "water tariff.",
                     key="cost_per_m3_tab5",
                 )
                 cost_per_litre = cost_per_m3 / 1000.0
             capacity_factor = st.number_input(
-                "Capacity factor", min_value=0.0, max_value=1.0, value=0.70, step=0.01,
+                "Capacity factor", min_value=0.0, max_value=1.0, value=0.88, step=0.01,
                 format="%.2f", key="capacity_factor_tab5",
-                help="Fraction of the year the plant effectively runs at the daily-schedule rate (0.70 = 70%).",
+                help="Fraction of the year the plant effectively runs at the daily-schedule rate (0.88 = 88%).",
             )
 
         # Levelized Cost = (OPEX from energy + water + amortized CAPEX) ÷ Total Yield in tonnes.
