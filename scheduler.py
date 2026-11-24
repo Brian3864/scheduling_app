@@ -2686,19 +2686,6 @@ with tab3:
             st.metric("Total Yield", f"{yield_energy_int['Total Yield (kg CO2)'].sum():.1f} kg CO2")
             st.metric("Total Energy", f"{yield_energy_int['Total Energy (kWh)'].sum():.1f} kWh")
 
-        # === Baseline Analysis ===
-        st.markdown("### Baseline Analysis")
-        st.caption("Group A only (no resource sharing) compared against Group A + B Concurrent and Interleaved")
-        inc_int = cycles_int - cycles_baseline
-        inc_conc = cycles_conc - cycles_baseline
-        bl_col1, bl_col2, bl_col3 = st.columns(3)
-        with bl_col1:
-            st.metric("Group A only (baseline)", cycles_baseline, help="Group A modules, Group A phase durations, each phase has its own capacity—no shared resource constraints")
-        with bl_col2:
-            st.metric("Group A + B Concurrent", cycles_conc, delta=inc_conc, help="All modules with Concurrent desorption cap")
-        with bl_col3:
-            st.metric("Group A + B Interleaved", cycles_int, delta=inc_int, help="All modules with Interleaved shared resource constraints")
-
         # === Gantt Charts (both modes) ===
         st.markdown("### Schedule Gantt Charts")
         colors_interleaved = {
@@ -2791,26 +2778,6 @@ with tab3:
             draw_gantt(ax2, schedule_int, colors_interleaved, False, f'Interleaved (Delay: {final_delay_to_use} min)')
             plt.tight_layout()
             st.pyplot(fig2)
-
-        # === Baseline vs Concurrent vs Interleaved Comparison ===
-        st.markdown("### Baseline vs Concurrent vs Interleaved Comparison")
-        target_pct = 80  # % increase over baseline
-        pct_conc_vs_baseline = ((cycles_conc - cycles_baseline) / cycles_baseline * 100) if cycles_baseline > 0 else 0
-        pct_int_vs_baseline = ((cycles_int - cycles_baseline) / cycles_baseline * 100) if cycles_baseline > 0 else 0
-        # Bar chart
-        fig_comp, ax_comp = plt.subplots(figsize=(8, 3))
-        bars = ax_comp.bar(["Baseline (A only)", "Concurrent (A+B)", "Interleaved (A+B)"],
-                           [cycles_baseline, cycles_conc, cycles_int],
-                           color=["#95a5a6", "#6C5CE7", "#E07C5E"], alpha=0.85, edgecolor="black")
-        ax_comp.set_ylabel("Total Complete Cycles")
-        ax_comp.set_title(f"Output comparison (target: ≥{target_pct}% increase over baseline)")
-        for b in bars:
-            ax_comp.annotate(f"{int(b.get_height())}", xy=(b.get_x() + b.get_width()/2, b.get_height()),
-                             ha="center", va="bottom", fontsize=12)
-        ax_comp.set_ylim(0, max(cycles_baseline, cycles_int, cycles_conc) * 1.2)
-        plt.tight_layout()
-        st.pyplot(fig_comp)
-        plt.close(fig_comp)
 
         # === Module Utilisation & Idle Time ===
         def compute_module_metrics(schedule_df):
