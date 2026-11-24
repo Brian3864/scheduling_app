@@ -3270,562 +3270,580 @@ with tab4:
             help="When another pair's Evacuation overlaps a pair's Cooling, Cooling pauses and resumes once that Evacuation ends."
         )
 
-    st.markdown("## 3-Pair Configurations")
+    adv_generate_all = st.button(
+        "Generate all five configurations", key="adv_generate_all",
+        help="Runs 6-6-4, 8-4-4, 6-5-5, 4-4-4-4 and 2-2-2-2 N3/N4 at once; each one's results appear on its own tab.",
+    )
     st.caption(
-        "These three configurations use the ORIGINAL Adsorption-overlap rule: one privileged pair "
-        "can overlap its Adsorption with the other two, but those two cannot overlap each other."
+        "Each tab below holds one configuration: its inputs and duration tables, its own "
+        "Generate button, and its results. 6-6-4, 8-4-4 and 6-5-5 are 3-pair configurations; "
+        "4-4-4-4 and 2-2-2-2 N3/N4 are 4-pair configurations."
     )
-
-    st.markdown("### 6-6-4 Configuration")
-    st.caption("Phase durations per pair - edit directly in the table")
-
-    PAIRS = ["Group A", "Group B", "Group C"]
-    st.markdown("#### Physical Module Pairing")
-    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
-    st.dataframe(physical_pairing_table(PAIRS, PAIR_PHYSICAL_MODULES), use_container_width=True, hide_index=True)
-
-    st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
-    st.dataframe(
-        module_mapping_table(PAIRS, PAIR_PLANT_MODULE, PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA),
-        use_container_width=True, hide_index=True,
+    adv_tab_664, adv_tab_844, adv_tab_655, adv_tab_4x4, adv_tab_n3n4 = st.tabs(
+        ["6-6-4 Configuration", "8-4-4 Configuration", "6-5-5 Configuration", "4-4-4-4 Configuration", "2-2-2-2 (N3/N4) Configuration"]
     )
-    adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
+    with adv_tab_664:
+        st.caption("Adsorption rule (3-pair): one privileged pair can overlap its Adsorption with the other two, but those two cannot overlap each other.")
+        st.caption("Phase durations per pair - edit directly in the table")
 
-    # Fallback for any phase/pair the stage log doesn't cover (e.g. Repressurization,
-    # which has no equivalent log column, or if the CSV is missing).
-    FALLBACK_PHASE_DURATIONS = {
-        **CORE_PHASE_FALLBACK_DURATIONS, "Repressurization": 5,
-    }
-    stage_defaults_by_pair = load_stage_duration_defaults_by_pair(PAIRS)
-    # Bump whenever STAGE_PHASE_COLUMNS' mapping (which source columns feed which
-    # phase) or FALLBACK_PHASE_DURATIONS changes, so stale sessions refresh.
-    ADV_PHASE_DURATIONS_DEFAULTS_VERSION = 2
+        PAIRS = ["Group A", "Group B", "Group C"]
+        st.markdown("#### Physical Module Pairing")
+        st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+        st.dataframe(physical_pairing_table(PAIRS, PAIR_PHYSICAL_MODULES), use_container_width=True, hide_index=True)
 
-    def _pair_phase_durations(pair):
-        pair_defaults = stage_defaults_by_pair.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+        st.markdown("#### Data Sourcing")
+        st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+        st.dataframe(
+            module_mapping_table(PAIRS, PAIR_PLANT_MODULE, PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA),
+            use_container_width=True, hide_index=True,
+        )
+        adv_phase_columns = ["Phase"] + [f"{p} (min)" for p in PAIRS]
 
-    get_versioned_default_table(
-        "adv_phase_durations", adv_phase_columns, ADV_PHASE_DURATIONS_DEFAULTS_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations("Group A"),
-            "Group B (min)": _pair_phase_durations("Group B"),
-            "Group C (min)": _pair_phase_durations("Group C"),
-        }),
-    )
-
-    st.caption(
-        "Defaults for Adsorption, Evacuation, NCG Purging, Heating, CO2 Purging, and Cooling are "
-        "seeded from the live stage-duration data: Group A and Group C from the N1N2N3-M1n3 "
-        "cycle average, Group B from the N1N2-M1n3 cycle average. Repressurization has no "
-        "equivalent in that data, so it keeps its original default. Edit any cell if a pair's real "
-        "durations differ."
-    )
-
-    adv_phase_table = st.data_editor(
-        st.session_state.adv_phase_durations,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor"
-    )
-
-    st.session_state.adv_phase_durations = adv_phase_table
-
-    PHASE_DURATIONS_BY_PAIR = {
-        pair: {
-            phase: int(
-                adv_phase_table.loc[
-                    adv_phase_table["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
+        # Fallback for any phase/pair the stage log doesn't cover (e.g. Repressurization,
+        # which has no equivalent log column, or if the CSV is missing).
+        FALLBACK_PHASE_DURATIONS = {
+            **CORE_PHASE_FALLBACK_DURATIONS, "Repressurization": 5,
         }
-        for pair in PAIRS
-    }
+        stage_defaults_by_pair = load_stage_duration_defaults_by_pair(PAIRS)
+        # Bump whenever STAGE_PHASE_COLUMNS' mapping (which source columns feed which
+        # phase) or FALLBACK_PHASE_DURATIONS changes, so stale sessions refresh.
+        ADV_PHASE_DURATIONS_DEFAULTS_VERSION = 2
 
-    pair_plant_defaults = load_plant_cycle_defaults_by_pair(PAIRS)
-    st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
-    st.caption(
-        "Defaults are seeded from the live plant-cycle data. Energy per Cycle uses each pair's "
-        "single Module average (PAIR_PLANT_MODULE, same source as phase durations): Group A/C from "
-        f"N1N2N3-M1n3 ({pair_plant_defaults['Group A'][0]} kWh), Group B from N1N2-M1n3 "
-        f"({pair_plant_defaults['Group B'][0]} kWh). Yield per Cycle instead uses a different formula "
-        "per pair (PAIR_YIELD_FORMULA): Group A from N1N2N3-M1n3 "
-        f"({pair_plant_defaults['Group A'][1]} kg CO2), Group B from N3-M2n4 doubled "
-        f"({pair_plant_defaults['Group B'][1]} kg CO2), Group C from N1N2-M1n3 + N3-M2n4 summed "
-        f"({pair_plant_defaults['Group C'][1]} kg CO2). Edit per pair if a pair's real output differs."
-    )
-    # Bump whenever PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA, or
-    # load_plant_cycle_defaults_by_pair()'s sourcing changes.
-    ENERGY_YIELD_TAB4_DEFAULTS_VERSION = 3
-    energy_yield_tab4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4", energy_yield_tab4_cols, ENERGY_YIELD_TAB4_DEFAULTS_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS,
-            "Energy per Cycle (kWh)": [pair_plant_defaults[p][0] for p in PAIRS],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults[p][1] for p in PAIRS],
-        }),
-    )
-    energy_yield_tab4 = st.data_editor(
-        st.session_state.energy_yield_tab4,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_tab4",
-    )
-    st.session_state.energy_yield_tab4 = energy_yield_tab4
+        def _pair_phase_durations(pair):
+            pair_defaults = stage_defaults_by_pair.get(pair, {})
+            return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
 
-    PAIR_ENERGY_PER_CYCLE = {
-        pair: float(energy_yield_tab4.loc[energy_yield_tab4["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS
-    }
-    PAIR_YIELD_PER_CYCLE = {
-        pair: float(energy_yield_tab4.loc[energy_yield_tab4["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS
-    }
+        get_versioned_default_table(
+            "adv_phase_durations", adv_phase_columns, ADV_PHASE_DURATIONS_DEFAULTS_VERSION,
+            lambda: pd.DataFrame({
+                "Phase": PHASES,
+                "Group A (min)": _pair_phase_durations("Group A"),
+                "Group B (min)": _pair_phase_durations("Group B"),
+                "Group C (min)": _pair_phase_durations("Group C"),
+            }),
+        )
+
+        st.caption(
+            "Defaults for Adsorption, Evacuation, NCG Purging, Heating, CO2 Purging, and Cooling are "
+            "seeded from the live stage-duration data: Group A and Group C from the N1N2N3-M1n3 "
+            "cycle average, Group B from the N1N2-M1n3 cycle average. Repressurization has no "
+            "equivalent in that data, so it keeps its original default. Edit any cell if a pair's real "
+            "durations differ."
+        )
+
+        adv_phase_table = st.data_editor(
+            st.session_state.adv_phase_durations,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Phase": st.column_config.TextColumn("Phase", disabled=True),
+                "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+                "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+                "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+            },
+            key="adv_phase_editor"
+        )
+
+        st.session_state.adv_phase_durations = adv_phase_table
+
+        PHASE_DURATIONS_BY_PAIR = {
+            pair: {
+                phase: int(
+                    adv_phase_table.loc[
+                        adv_phase_table["Phase"] == phase,
+                        f"{pair} (min)"
+                    ].iloc[0]
+                )
+                for phase in PHASES
+            }
+            for pair in PAIRS
+        }
+
+        pair_plant_defaults = load_plant_cycle_defaults_by_pair(PAIRS)
+        st.caption("Energy used & plant yield per pair, per completed cycle — edit directly in the table")
+        st.caption(
+            "Defaults are seeded from the live plant-cycle data. Energy per Cycle uses each pair's "
+            "single Module average (PAIR_PLANT_MODULE, same source as phase durations): Group A/C from "
+            f"N1N2N3-M1n3 ({pair_plant_defaults['Group A'][0]} kWh), Group B from N1N2-M1n3 "
+            f"({pair_plant_defaults['Group B'][0]} kWh). Yield per Cycle instead uses a different formula "
+            "per pair (PAIR_YIELD_FORMULA): Group A from N1N2N3-M1n3 "
+            f"({pair_plant_defaults['Group A'][1]} kg CO2), Group B from N3-M2n4 doubled "
+            f"({pair_plant_defaults['Group B'][1]} kg CO2), Group C from N1N2-M1n3 + N3-M2n4 summed "
+            f"({pair_plant_defaults['Group C'][1]} kg CO2). Edit per pair if a pair's real output differs."
+        )
+        # Bump whenever PAIR_PLANT_MODULE, PAIR_YIELD_FORMULA, or
+        # load_plant_cycle_defaults_by_pair()'s sourcing changes.
+        ENERGY_YIELD_TAB4_DEFAULTS_VERSION = 3
+        energy_yield_tab4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+        get_versioned_default_table(
+            "energy_yield_tab4", energy_yield_tab4_cols, ENERGY_YIELD_TAB4_DEFAULTS_VERSION,
+            lambda: pd.DataFrame({
+                "Pair": PAIRS,
+                "Energy per Cycle (kWh)": [pair_plant_defaults[p][0] for p in PAIRS],
+                "Yield per Cycle (kg CO2)": [pair_plant_defaults[p][1] for p in PAIRS],
+            }),
+        )
+        energy_yield_tab4 = st.data_editor(
+            st.session_state.energy_yield_tab4,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Pair": st.column_config.TextColumn("Pair", disabled=True),
+                "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+                "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+            },
+            key="energy_yield_editor_tab4",
+        )
+        st.session_state.energy_yield_tab4 = energy_yield_tab4
+
+        PAIR_ENERGY_PER_CYCLE = {
+            pair: float(energy_yield_tab4.loc[energy_yield_tab4["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+            for pair in PAIRS
+        }
+        PAIR_YIELD_PER_CYCLE = {
+            pair: float(energy_yield_tab4.loc[energy_yield_tab4["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+            for pair in PAIRS
+        }
+        # This configuration's Generate button and results are rendered here
+        # (filled in further down, once the scheduler is defined).
+        adv_results_slot_664 = st.container()
 
     # === 8-4-4 comparison configuration ===
     # Same scheduling engine, phase list, operating period, and Evacuation-overrides-
     # Cooling setting as the 6-6-4 config above — only the pairing/module sourcing
     # differs. See PAIRS_8_4_4 / PAIR_PLANT_MODULE_8_4_4 near the top of the file.
-    st.markdown("### 8-4-4 Configuration (Comparison)")
-    st.caption("Same scheduling rules as above, applied to an 8-4-4 pairing instead of 6-6-4, for side-by-side comparison.")
-    st.markdown("#### Physical Module Pairing")
-    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
-    st.dataframe(physical_pairing_table(PAIRS_8_4_4, PAIR_PHYSICAL_MODULES_8_4_4), use_container_width=True, hide_index=True)
+    with adv_tab_844:
+        st.caption("Adsorption rule (3-pair): one privileged pair can overlap its Adsorption with the other two, but those two cannot overlap each other.")
+        st.caption("Same scheduling rules as 6-6-4, applied to an 8-4-4 pairing instead, for side-by-side comparison.")
+        st.markdown("#### Physical Module Pairing")
+        st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+        st.dataframe(physical_pairing_table(PAIRS_8_4_4, PAIR_PHYSICAL_MODULES_8_4_4), use_container_width=True, hide_index=True)
 
-    st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
-    st.dataframe(
-        module_mapping_table(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4),
-        use_container_width=True, hide_index=True,
-    )
+        st.markdown("#### Data Sourcing")
+        st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+        st.dataframe(
+            module_mapping_table(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4),
+            use_container_width=True, hide_index=True,
+        )
 
-    adv_phase_columns_844 = ["Phase"] + [f"{p} (min)" for p in PAIRS_8_4_4]
-    stage_defaults_by_pair_844 = load_stage_duration_defaults_by_pair(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
-    ADV_PHASE_DURATIONS_844_VERSION = 2
+        adv_phase_columns_844 = ["Phase"] + [f"{p} (min)" for p in PAIRS_8_4_4]
+        stage_defaults_by_pair_844 = load_stage_duration_defaults_by_pair(PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4)
+        ADV_PHASE_DURATIONS_844_VERSION = 2
 
-    def _pair_phase_durations_844(pair):
-        pair_defaults = stage_defaults_by_pair_844.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+        def _pair_phase_durations_844(pair):
+            pair_defaults = stage_defaults_by_pair_844.get(pair, {})
+            return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
 
-    get_versioned_default_table(
-        "adv_phase_durations_844", adv_phase_columns_844, ADV_PHASE_DURATIONS_844_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations_844("Group A"),
-            "Group B (min)": _pair_phase_durations_844("Group B"),
-            "Group C (min)": _pair_phase_durations_844("Group C"),
-        }),
-    )
-    st.caption(
-        "Phase durations seeded from the live stage-duration data: Group A (8-module pair) from "
-        "the N1N2N3-M1n3 cycle average, Groups B and C (4-module pairs) from the N1N2-M1n3 cycle average."
-    )
-    adv_phase_table_844 = st.data_editor(
-        st.session_state.adv_phase_durations_844,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor_844",
-    )
-    st.session_state.adv_phase_durations_844 = adv_phase_table_844
+        get_versioned_default_table(
+            "adv_phase_durations_844", adv_phase_columns_844, ADV_PHASE_DURATIONS_844_VERSION,
+            lambda: pd.DataFrame({
+                "Phase": PHASES,
+                "Group A (min)": _pair_phase_durations_844("Group A"),
+                "Group B (min)": _pair_phase_durations_844("Group B"),
+                "Group C (min)": _pair_phase_durations_844("Group C"),
+            }),
+        )
+        st.caption(
+            "Phase durations seeded from the live stage-duration data: Group A (8-module pair) from "
+            "the N1N2N3-M1n3 cycle average, Groups B and C (4-module pairs) from the N1N2-M1n3 cycle average."
+        )
+        adv_phase_table_844 = st.data_editor(
+            st.session_state.adv_phase_durations_844,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Phase": st.column_config.TextColumn("Phase", disabled=True),
+                "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+                "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+                "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+            },
+            key="adv_phase_editor_844",
+        )
+        st.session_state.adv_phase_durations_844 = adv_phase_table_844
 
-    PHASE_DURATIONS_BY_PAIR_844 = {
-        pair: {
-            phase: int(
-                adv_phase_table_844.loc[
-                    adv_phase_table_844["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
+        PHASE_DURATIONS_BY_PAIR_844 = {
+            pair: {
+                phase: int(
+                    adv_phase_table_844.loc[
+                        adv_phase_table_844["Phase"] == phase,
+                        f"{pair} (min)"
+                    ].iloc[0]
+                )
+                for phase in PHASES
+            }
+            for pair in PAIRS_8_4_4
         }
-        for pair in PAIRS_8_4_4
-    }
 
-    pair_plant_defaults_844 = load_plant_cycle_defaults_weighted(
-        PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4
-    )
-    # Bumped because Yield per Cycle sourcing changed from the simple single-Module
-    # average (matching Energy) to PAIR_YIELD_FORMULA_8_4_4's weighted sum.
-    ENERGY_YIELD_844_VERSION = 3
-    energy_yield_844_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4_844", energy_yield_844_cols, ENERGY_YIELD_844_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS_8_4_4,
-            "Energy per Cycle (kWh)": [pair_plant_defaults_844[p][0] for p in PAIRS_8_4_4],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults_844[p][1] for p in PAIRS_8_4_4],
-        }),
-    )
-    st.caption(
-        "Energy per Cycle uses the same sourcing as phase durations: Group A (8-module pair) from "
-        "N1N2N3-M1n3, Groups B and C (4-module pairs) from N1N2-M1n3. Yield per Cycle instead uses "
-        "a different formula per pair (PAIR_YIELD_FORMULA_8_4_4): Group A from N1N2N3-M1n3 + N3-M2n4 "
-        "summed, Group B from N1N2-M1n3 alone, Group C from N3-M2n4 doubled."
-    )
-    energy_yield_table_844 = st.data_editor(
-        st.session_state.energy_yield_tab4_844,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_844",
-    )
-    st.session_state.energy_yield_tab4_844 = energy_yield_table_844
+        pair_plant_defaults_844 = load_plant_cycle_defaults_weighted(
+            PAIRS_8_4_4, PAIR_PLANT_MODULE_8_4_4, PAIR_YIELD_FORMULA_8_4_4
+        )
+        # Bumped because Yield per Cycle sourcing changed from the simple single-Module
+        # average (matching Energy) to PAIR_YIELD_FORMULA_8_4_4's weighted sum.
+        ENERGY_YIELD_844_VERSION = 3
+        energy_yield_844_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+        get_versioned_default_table(
+            "energy_yield_tab4_844", energy_yield_844_cols, ENERGY_YIELD_844_VERSION,
+            lambda: pd.DataFrame({
+                "Pair": PAIRS_8_4_4,
+                "Energy per Cycle (kWh)": [pair_plant_defaults_844[p][0] for p in PAIRS_8_4_4],
+                "Yield per Cycle (kg CO2)": [pair_plant_defaults_844[p][1] for p in PAIRS_8_4_4],
+            }),
+        )
+        st.caption(
+            "Energy per Cycle uses the same sourcing as phase durations: Group A (8-module pair) from "
+            "N1N2N3-M1n3, Groups B and C (4-module pairs) from N1N2-M1n3. Yield per Cycle instead uses "
+            "a different formula per pair (PAIR_YIELD_FORMULA_8_4_4): Group A from N1N2N3-M1n3 + N3-M2n4 "
+            "summed, Group B from N1N2-M1n3 alone, Group C from N3-M2n4 doubled."
+        )
+        energy_yield_table_844 = st.data_editor(
+            st.session_state.energy_yield_tab4_844,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Pair": st.column_config.TextColumn("Pair", disabled=True),
+                "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+                "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+            },
+            key="energy_yield_editor_844",
+        )
+        st.session_state.energy_yield_tab4_844 = energy_yield_table_844
 
-    PAIR_ENERGY_PER_CYCLE_844 = {
-        pair: float(energy_yield_table_844.loc[energy_yield_table_844["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS_8_4_4
-    }
-    PAIR_YIELD_PER_CYCLE_844 = {
-        pair: float(energy_yield_table_844.loc[energy_yield_table_844["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS_8_4_4
-    }
+        PAIR_ENERGY_PER_CYCLE_844 = {
+            pair: float(energy_yield_table_844.loc[energy_yield_table_844["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+            for pair in PAIRS_8_4_4
+        }
+        PAIR_YIELD_PER_CYCLE_844 = {
+            pair: float(energy_yield_table_844.loc[energy_yield_table_844["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+            for pair in PAIRS_8_4_4
+        }
+        # This configuration's Generate button and results are rendered here
+        # (filled in further down, once the scheduler is defined).
+        adv_results_slot_844 = st.container()
 
     # === "6-5-5" configuration ===
-    st.markdown("### 6-5-5 Configuration")
-    st.caption(
-        "3 pairs (16 = 6+5+5), sized for the best achievable Yield: Group A = N1N2N3-M1n3 "
-        "(6 modules, the highest real Yield per Cycle available). Group B and Group C (5 modules "
-        "each) take their phase durations from N1N2-M1n3 — the closest well-sampled real "
-        "combination in size, keeping cycle timing realistic — but their Yield per Cycle instead "
-        "uses weighted sums of N2-M2n4/N3-M2n4 (see the table below). This is a 3-pair "
-        "configuration, so it uses the original Adsorption-overlap rule: Group A "
-        "can overlap with Group B/C, but Group B and Group C cannot overlap each other."
-    )
-    st.markdown("#### Physical Module Pairing")
-    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
-    st.dataframe(physical_pairing_table(PAIRS_6_5_5, PAIR_PHYSICAL_MODULES_6_5_5), use_container_width=True, hide_index=True)
+    with adv_tab_655:
+        st.caption("Adsorption rule (3-pair): one privileged pair can overlap its Adsorption with the other two, but those two cannot overlap each other.")
+        st.caption(
+            "3 pairs (16 = 6+5+5), sized for the best achievable Yield: Group A = N1N2N3-M1n3 "
+            "(6 modules, the highest real Yield per Cycle available). Group B and Group C (5 modules "
+            "each) take their phase durations from N1N2-M1n3 — the closest well-sampled real "
+            "combination in size, keeping cycle timing realistic — but their Yield per Cycle instead "
+            "uses weighted sums of N2-M2n4/N3-M2n4 (see the table below). This is a 3-pair "
+            "configuration, so it uses the original Adsorption-overlap rule: Group A "
+            "can overlap with Group B/C, but Group B and Group C cannot overlap each other."
+        )
+        st.markdown("#### Physical Module Pairing")
+        st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+        st.dataframe(physical_pairing_table(PAIRS_6_5_5, PAIR_PHYSICAL_MODULES_6_5_5), use_container_width=True, hide_index=True)
 
-    st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
-    st.dataframe(
-        module_mapping_table(
-            PAIRS_6_5_5, PAIR_DURATION_MODULE_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
-            represents_map=REPRESENTS_6_5_5,
-        ),
-        use_container_width=True, hide_index=True,
-    )
+        st.markdown("#### Data Sourcing")
+        st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+        st.dataframe(
+            module_mapping_table(
+                PAIRS_6_5_5, PAIR_DURATION_MODULE_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
+                represents_map=REPRESENTS_6_5_5,
+            ),
+            use_container_width=True, hide_index=True,
+        )
 
-    adv_phase_columns_655 = ["Phase"] + [f"{p} (min)" for p in PAIRS_6_5_5]
-    stage_defaults_655 = load_stage_duration_defaults_by_pair(PAIRS_6_5_5, PAIR_DURATION_MODULE_6_5_5)
-    ADV_PHASE_DURATIONS_655_VERSION = 1
+        adv_phase_columns_655 = ["Phase"] + [f"{p} (min)" for p in PAIRS_6_5_5]
+        stage_defaults_655 = load_stage_duration_defaults_by_pair(PAIRS_6_5_5, PAIR_DURATION_MODULE_6_5_5)
+        ADV_PHASE_DURATIONS_655_VERSION = 1
 
-    def _pair_phase_durations_655(pair):
-        pair_defaults = stage_defaults_655.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+        def _pair_phase_durations_655(pair):
+            pair_defaults = stage_defaults_655.get(pair, {})
+            return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
 
-    get_versioned_default_table(
-        "adv_phase_durations_655", adv_phase_columns_655, ADV_PHASE_DURATIONS_655_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations_655("Group A"),
-            "Group B (min)": _pair_phase_durations_655("Group B"),
-            "Group C (min)": _pair_phase_durations_655("Group C"),
-        }),
-    )
-    adv_phase_table_655 = st.data_editor(
-        st.session_state.adv_phase_durations_655,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor_655",
-    )
-    st.session_state.adv_phase_durations_655 = adv_phase_table_655
+        get_versioned_default_table(
+            "adv_phase_durations_655", adv_phase_columns_655, ADV_PHASE_DURATIONS_655_VERSION,
+            lambda: pd.DataFrame({
+                "Phase": PHASES,
+                "Group A (min)": _pair_phase_durations_655("Group A"),
+                "Group B (min)": _pair_phase_durations_655("Group B"),
+                "Group C (min)": _pair_phase_durations_655("Group C"),
+            }),
+        )
+        adv_phase_table_655 = st.data_editor(
+            st.session_state.adv_phase_durations_655,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Phase": st.column_config.TextColumn("Phase", disabled=True),
+                "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+                "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+                "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+            },
+            key="adv_phase_editor_655",
+        )
+        st.session_state.adv_phase_durations_655 = adv_phase_table_655
 
-    PHASE_DURATIONS_BY_PAIR_655 = {
-        pair: {
-            phase: int(
-                adv_phase_table_655.loc[
-                    adv_phase_table_655["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
+        PHASE_DURATIONS_BY_PAIR_655 = {
+            pair: {
+                phase: int(
+                    adv_phase_table_655.loc[
+                        adv_phase_table_655["Phase"] == phase,
+                        f"{pair} (min)"
+                    ].iloc[0]
+                )
+                for phase in PHASES
+            }
+            for pair in PAIRS_6_5_5
         }
-        for pair in PAIRS_6_5_5
-    }
 
-    pair_plant_defaults_655 = load_plant_cycle_defaults_weighted(
-        PAIRS_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
-    )
-    ENERGY_YIELD_655_VERSION = 3
-    energy_yield_655_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4_655", energy_yield_655_cols, ENERGY_YIELD_655_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS_6_5_5,
-            "Energy per Cycle (kWh)": [pair_plant_defaults_655[p][0] for p in PAIRS_6_5_5],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults_655[p][1] for p in PAIRS_6_5_5],
-        }),
-    )
-    energy_yield_table_655 = st.data_editor(
-        st.session_state.energy_yield_tab4_655,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_655",
-    )
-    st.session_state.energy_yield_tab4_655 = energy_yield_table_655
+        pair_plant_defaults_655 = load_plant_cycle_defaults_weighted(
+            PAIRS_6_5_5, PAIR_ENERGY_MODULE_6_5_5, PAIR_YIELD_FORMULA_6_5_5,
+        )
+        ENERGY_YIELD_655_VERSION = 3
+        energy_yield_655_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+        get_versioned_default_table(
+            "energy_yield_tab4_655", energy_yield_655_cols, ENERGY_YIELD_655_VERSION,
+            lambda: pd.DataFrame({
+                "Pair": PAIRS_6_5_5,
+                "Energy per Cycle (kWh)": [pair_plant_defaults_655[p][0] for p in PAIRS_6_5_5],
+                "Yield per Cycle (kg CO2)": [pair_plant_defaults_655[p][1] for p in PAIRS_6_5_5],
+            }),
+        )
+        energy_yield_table_655 = st.data_editor(
+            st.session_state.energy_yield_tab4_655,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Pair": st.column_config.TextColumn("Pair", disabled=True),
+                "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+                "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+            },
+            key="energy_yield_editor_655",
+        )
+        st.session_state.energy_yield_tab4_655 = energy_yield_table_655
 
-    PAIR_ENERGY_PER_CYCLE_655 = {
-        pair: float(energy_yield_table_655.loc[energy_yield_table_655["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS_6_5_5
-    }
-    PAIR_YIELD_PER_CYCLE_655 = {
-        pair: float(energy_yield_table_655.loc[energy_yield_table_655["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS_6_5_5
-    }
-
-    st.markdown("## 4-Pair Configurations")
-    st.caption(
-        "These two configurations add a 4th pair and relax the Adsorption-overlap rule: every "
-        "pair's Adsorption can overlap freely with every other pair's, since the original 3-pair "
-        "rule doesn't generalize to a 4th pair without guessing at an unknown fan-sharing constraint."
-    )
-
-    # === "4-4-4-4" configuration ===
-    st.markdown("### 4-4-4-4 Configuration (Adsorption Overlap Allowed)")
-    st.caption(
-        "4 equal 4-module pairs: Group A = N1&N2's M1/M3, Group B = N1&N2's M2/M4, Group C = "
-        "N3&N4's M1/M3, Group D = N3&N4's M2/M4. Only Group A's combination (N1N2-M1n3) is "
-        "actually recorded, so every pair's phase durations and Energy per Cycle come from "
-        "N1N2-M1n3's own real average. Yield per Cycle differs: Group A and Group B keep "
-        "N1N2-M1n3's own real Yield, while Group C and Group D use N3-M2n4's real Yield "
-        "doubled. Adsorption overlap is unrestricted for all 4 pairs."
-    )
-    st.markdown("#### Physical Module Pairing")
-    st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
-    st.dataframe(physical_pairing_table(PAIRS_4X4, PAIR_PHYSICAL_MODULES_4X4), use_container_width=True, hide_index=True)
-
-    st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
-    st.dataframe(
-        module_mapping_table(
-            PAIRS_4X4, PAIR_MODULE_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
-            represents_map=REPRESENTS_4X4,
-        ),
-        use_container_width=True, hide_index=True,
-    )
-
-    adv_phase_columns_4x4 = ["Phase"] + [f"{p} (min)" for p in PAIRS_4X4]
-    stage_defaults_4x4 = load_stage_duration_defaults_by_pair(PAIRS_4X4, PAIR_MODULE_4X4)
-    ADV_PHASE_DURATIONS_4X4_VERSION = 1
-
-    def _pair_phase_durations_4x4(pair):
-        pair_defaults = stage_defaults_4x4.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
-
-    get_versioned_default_table(
-        "adv_phase_durations_4x4", adv_phase_columns_4x4, ADV_PHASE_DURATIONS_4X4_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations_4x4("Group A"),
-            "Group B (min)": _pair_phase_durations_4x4("Group B"),
-            "Group C (min)": _pair_phase_durations_4x4("Group C"),
-            "Group D (min)": _pair_phase_durations_4x4("Group D"),
-        }),
-    )
-    adv_phase_table_4x4 = st.data_editor(
-        st.session_state.adv_phase_durations_4x4,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-            "Group D (min)": st.column_config.NumberColumn("Group D (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor_4x4",
-    )
-    st.session_state.adv_phase_durations_4x4 = adv_phase_table_4x4
-
-    PHASE_DURATIONS_BY_PAIR_4X4 = {
-        pair: {
-            phase: int(
-                adv_phase_table_4x4.loc[
-                    adv_phase_table_4x4["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
+        PAIR_ENERGY_PER_CYCLE_655 = {
+            pair: float(energy_yield_table_655.loc[energy_yield_table_655["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+            for pair in PAIRS_6_5_5
         }
-        for pair in PAIRS_4X4
-    }
-
-    pair_plant_defaults_4x4 = load_plant_cycle_defaults_weighted(
-        PAIRS_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
-    )
-    ENERGY_YIELD_4X4_VERSION = 2
-    energy_yield_4x4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4_4x4", energy_yield_4x4_cols, ENERGY_YIELD_4X4_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS_4X4,
-            "Energy per Cycle (kWh)": [pair_plant_defaults_4x4[p][0] for p in PAIRS_4X4],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults_4x4[p][1] for p in PAIRS_4X4],
-        }),
-    )
-    energy_yield_table_4x4 = st.data_editor(
-        st.session_state.energy_yield_tab4_4x4,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_4x4",
-    )
-    st.session_state.energy_yield_tab4_4x4 = energy_yield_table_4x4
-
-    PAIR_ENERGY_PER_CYCLE_4X4 = {
-        pair: float(energy_yield_table_4x4.loc[energy_yield_table_4x4["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS_4X4
-    }
-    PAIR_YIELD_PER_CYCLE_4X4 = {
-        pair: float(energy_yield_table_4x4.loc[energy_yield_table_4x4["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS_4X4
-    }
-
-    st.markdown("### 2-2-2-2 (N3/N4) Configuration (Adsorption Overlap Allowed)")
-    st.caption(
-        "A second 4-equal-group configuration, covering only Nelion 3 and Nelion 4 (8 of 16 "
-        "modules) instead of the full plant, grouped by module type rather than by Nelion: "
-        "Group A = N3's M1/M3, Group B = N4's M1/M3, Group C = N3's M2/M4, Group D = N4's "
-        "M2/M4. Nelion 4 has since been commissioned and now has its own recorded cycles, so "
-        "every group sources Duration, Energy and Yield directly from its own matching Module "
-        "average — no proxy or mirroring needed. Since every group here is already a genuine "
-        "2-module pair, no multiplier is applied anywhere. Adsorption overlap is unrestricted "
-        "for all 4 pairs."
-    )
-    st.markdown("#### Physical Module Pairing")
-    st.caption("Which of Nelion 3 and Nelion 4's 8 real modules are grouped together for desorption in this configuration.")
-    st.dataframe(physical_pairing_table(PAIRS_N3N4, PAIR_PHYSICAL_MODULES_N3N4), use_container_width=True, hide_index=True)
-
-    st.markdown("#### Data Sourcing")
-    st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield.")
-    st.dataframe(
-        module_mapping_table(
-            PAIRS_N3N4, PAIR_MODULE_N3N4, PAIR_MODULE_N3N4, PAIR_YIELD_FORMULA_N3N4,
-        ),
-        use_container_width=True, hide_index=True,
-    )
-
-    adv_phase_columns_n3n4 = ["Phase"] + [f"{p} (min)" for p in PAIRS_N3N4]
-    stage_defaults_n3n4 = load_stage_duration_defaults_by_pair(PAIRS_N3N4, PAIR_MODULE_N3N4)
-    ADV_PHASE_DURATIONS_N3N4_VERSION = 1
-
-    def _pair_phase_durations_n3n4(pair):
-        pair_defaults = stage_defaults_n3n4.get(pair, {})
-        return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
-
-    get_versioned_default_table(
-        "adv_phase_durations_n3n4", adv_phase_columns_n3n4, ADV_PHASE_DURATIONS_N3N4_VERSION,
-        lambda: pd.DataFrame({
-            "Phase": PHASES,
-            "Group A (min)": _pair_phase_durations_n3n4("Group A"),
-            "Group B (min)": _pair_phase_durations_n3n4("Group B"),
-            "Group C (min)": _pair_phase_durations_n3n4("Group C"),
-            "Group D (min)": _pair_phase_durations_n3n4("Group D"),
-        }),
-    )
-    adv_phase_table_n3n4 = st.data_editor(
-        st.session_state.adv_phase_durations_n3n4,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Phase": st.column_config.TextColumn("Phase", disabled=True),
-            "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
-            "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
-            "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
-            "Group D (min)": st.column_config.NumberColumn("Group D (min)", min_value=0, max_value=240, required=True),
-        },
-        key="adv_phase_editor_n3n4",
-    )
-    st.session_state.adv_phase_durations_n3n4 = adv_phase_table_n3n4
-
-    PHASE_DURATIONS_BY_PAIR_N3N4 = {
-        pair: {
-            phase: int(
-                adv_phase_table_n3n4.loc[
-                    adv_phase_table_n3n4["Phase"] == phase,
-                    f"{pair} (min)"
-                ].iloc[0]
-            )
-            for phase in PHASES
+        PAIR_YIELD_PER_CYCLE_655 = {
+            pair: float(energy_yield_table_655.loc[energy_yield_table_655["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+            for pair in PAIRS_6_5_5
         }
-        for pair in PAIRS_N3N4
-    }
+        # This configuration's Generate button and results are rendered here
+        # (filled in further down, once the scheduler is defined).
+        adv_results_slot_655 = st.container()
 
-    pair_plant_defaults_n3n4 = load_plant_cycle_defaults_weighted(
-        PAIRS_N3N4, PAIR_MODULE_N3N4, PAIR_YIELD_FORMULA_N3N4,
-    )
-    ENERGY_YIELD_N3N4_VERSION = 1
-    energy_yield_n3n4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
-    get_versioned_default_table(
-        "energy_yield_tab4_n3n4", energy_yield_n3n4_cols, ENERGY_YIELD_N3N4_VERSION,
-        lambda: pd.DataFrame({
-            "Pair": PAIRS_N3N4,
-            "Energy per Cycle (kWh)": [pair_plant_defaults_n3n4[p][0] for p in PAIRS_N3N4],
-            "Yield per Cycle (kg CO2)": [pair_plant_defaults_n3n4[p][1] for p in PAIRS_N3N4],
-        }),
-    )
-    energy_yield_table_n3n4 = st.data_editor(
-        st.session_state.energy_yield_tab4_n3n4,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair": st.column_config.TextColumn("Pair", disabled=True),
-            "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
-            "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
-        },
-        key="energy_yield_editor_n3n4",
-    )
-    st.session_state.energy_yield_tab4_n3n4 = energy_yield_table_n3n4
+    with adv_tab_4x4:
+        st.caption("Adsorption rule (4-pair): every pair's Adsorption can overlap freely with every other pair's.")
+        st.caption(
+            "4 equal 4-module pairs: Group A = N1&N2's M1/M3, Group B = N1&N2's M2/M4, Group C = "
+            "N3&N4's M1/M3, Group D = N3&N4's M2/M4. Only Group A's combination (N1N2-M1n3) is "
+            "actually recorded, so every pair's phase durations and Energy per Cycle come from "
+            "N1N2-M1n3's own real average. Yield per Cycle differs: Group A and Group B keep "
+            "N1N2-M1n3's own real Yield, while Group C and Group D use N3-M2n4's real Yield "
+            "doubled. Adsorption overlap is unrestricted for all 4 pairs."
+        )
+        st.markdown("#### Physical Module Pairing")
+        st.caption("Which of the plant's 16 real modules are grouped together for desorption in this configuration.")
+        st.dataframe(physical_pairing_table(PAIRS_4X4, PAIR_PHYSICAL_MODULES_4X4), use_container_width=True, hide_index=True)
 
-    PAIR_ENERGY_PER_CYCLE_N3N4 = {
-        pair: float(energy_yield_table_n3n4.loc[energy_yield_table_n3n4["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
-        for pair in PAIRS_N3N4
-    }
-    PAIR_YIELD_PER_CYCLE_N3N4 = {
-        pair: float(energy_yield_table_n3n4.loc[energy_yield_table_n3n4["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
-        for pair in PAIRS_N3N4
-    }
+        st.markdown("#### Data Sourcing")
+        st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield proxy.")
+        st.dataframe(
+            module_mapping_table(
+                PAIRS_4X4, PAIR_MODULE_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
+                represents_map=REPRESENTS_4X4,
+            ),
+            use_container_width=True, hide_index=True,
+        )
+
+        adv_phase_columns_4x4 = ["Phase"] + [f"{p} (min)" for p in PAIRS_4X4]
+        stage_defaults_4x4 = load_stage_duration_defaults_by_pair(PAIRS_4X4, PAIR_MODULE_4X4)
+        ADV_PHASE_DURATIONS_4X4_VERSION = 1
+
+        def _pair_phase_durations_4x4(pair):
+            pair_defaults = stage_defaults_4x4.get(pair, {})
+            return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+
+        get_versioned_default_table(
+            "adv_phase_durations_4x4", adv_phase_columns_4x4, ADV_PHASE_DURATIONS_4X4_VERSION,
+            lambda: pd.DataFrame({
+                "Phase": PHASES,
+                "Group A (min)": _pair_phase_durations_4x4("Group A"),
+                "Group B (min)": _pair_phase_durations_4x4("Group B"),
+                "Group C (min)": _pair_phase_durations_4x4("Group C"),
+                "Group D (min)": _pair_phase_durations_4x4("Group D"),
+            }),
+        )
+        adv_phase_table_4x4 = st.data_editor(
+            st.session_state.adv_phase_durations_4x4,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Phase": st.column_config.TextColumn("Phase", disabled=True),
+                "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+                "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+                "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+                "Group D (min)": st.column_config.NumberColumn("Group D (min)", min_value=0, max_value=240, required=True),
+            },
+            key="adv_phase_editor_4x4",
+        )
+        st.session_state.adv_phase_durations_4x4 = adv_phase_table_4x4
+
+        PHASE_DURATIONS_BY_PAIR_4X4 = {
+            pair: {
+                phase: int(
+                    adv_phase_table_4x4.loc[
+                        adv_phase_table_4x4["Phase"] == phase,
+                        f"{pair} (min)"
+                    ].iloc[0]
+                )
+                for phase in PHASES
+            }
+            for pair in PAIRS_4X4
+        }
+
+        pair_plant_defaults_4x4 = load_plant_cycle_defaults_weighted(
+            PAIRS_4X4, PAIR_MODULE_4X4, PAIR_YIELD_FORMULA_4X4,
+        )
+        ENERGY_YIELD_4X4_VERSION = 2
+        energy_yield_4x4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+        get_versioned_default_table(
+            "energy_yield_tab4_4x4", energy_yield_4x4_cols, ENERGY_YIELD_4X4_VERSION,
+            lambda: pd.DataFrame({
+                "Pair": PAIRS_4X4,
+                "Energy per Cycle (kWh)": [pair_plant_defaults_4x4[p][0] for p in PAIRS_4X4],
+                "Yield per Cycle (kg CO2)": [pair_plant_defaults_4x4[p][1] for p in PAIRS_4X4],
+            }),
+        )
+        energy_yield_table_4x4 = st.data_editor(
+            st.session_state.energy_yield_tab4_4x4,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Pair": st.column_config.TextColumn("Pair", disabled=True),
+                "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+                "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+            },
+            key="energy_yield_editor_4x4",
+        )
+        st.session_state.energy_yield_tab4_4x4 = energy_yield_table_4x4
+
+        PAIR_ENERGY_PER_CYCLE_4X4 = {
+            pair: float(energy_yield_table_4x4.loc[energy_yield_table_4x4["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+            for pair in PAIRS_4X4
+        }
+        PAIR_YIELD_PER_CYCLE_4X4 = {
+            pair: float(energy_yield_table_4x4.loc[energy_yield_table_4x4["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+            for pair in PAIRS_4X4
+        }
+        # This configuration's Generate button and results are rendered here
+        # (filled in further down, once the scheduler is defined).
+        adv_results_slot_4x4 = st.container()
+
+    with adv_tab_n3n4:
+        st.caption("Adsorption rule (4-pair): every pair's Adsorption can overlap freely with every other pair's.")
+        st.caption(
+            "A second 4-equal-group configuration, covering only Nelion 3 and Nelion 4 (8 of 16 "
+            "modules) instead of the full plant, grouped by module type rather than by Nelion: "
+            "Group A = N3's M1/M3, Group B = N4's M1/M3, Group C = N3's M2/M4, Group D = N4's "
+            "M2/M4. Nelion 4 has since been commissioned and now has its own recorded cycles, so "
+            "every group sources Duration, Energy and Yield directly from its own matching Module "
+            "average — no proxy or mirroring needed. Since every group here is already a genuine "
+            "2-module pair, no multiplier is applied anywhere. Adsorption overlap is unrestricted "
+            "for all 4 pairs."
+        )
+        st.markdown("#### Physical Module Pairing")
+        st.caption("Which of Nelion 3 and Nelion 4's 8 real modules are grouped together for desorption in this configuration.")
+        st.dataframe(physical_pairing_table(PAIRS_N3N4, PAIR_PHYSICAL_MODULES_N3N4), use_container_width=True, hide_index=True)
+
+        st.markdown("#### Data Sourcing")
+        st.caption("Which real Module average from the CSV logs is used as each pair's Duration/Energy/Yield.")
+        st.dataframe(
+            module_mapping_table(
+                PAIRS_N3N4, PAIR_MODULE_N3N4, PAIR_MODULE_N3N4, PAIR_YIELD_FORMULA_N3N4,
+            ),
+            use_container_width=True, hide_index=True,
+        )
+
+        adv_phase_columns_n3n4 = ["Phase"] + [f"{p} (min)" for p in PAIRS_N3N4]
+        stage_defaults_n3n4 = load_stage_duration_defaults_by_pair(PAIRS_N3N4, PAIR_MODULE_N3N4)
+        ADV_PHASE_DURATIONS_N3N4_VERSION = 1
+
+        def _pair_phase_durations_n3n4(pair):
+            pair_defaults = stage_defaults_n3n4.get(pair, {})
+            return [pair_defaults.get(phase, FALLBACK_PHASE_DURATIONS[phase]) for phase in PHASES]
+
+        get_versioned_default_table(
+            "adv_phase_durations_n3n4", adv_phase_columns_n3n4, ADV_PHASE_DURATIONS_N3N4_VERSION,
+            lambda: pd.DataFrame({
+                "Phase": PHASES,
+                "Group A (min)": _pair_phase_durations_n3n4("Group A"),
+                "Group B (min)": _pair_phase_durations_n3n4("Group B"),
+                "Group C (min)": _pair_phase_durations_n3n4("Group C"),
+                "Group D (min)": _pair_phase_durations_n3n4("Group D"),
+            }),
+        )
+        adv_phase_table_n3n4 = st.data_editor(
+            st.session_state.adv_phase_durations_n3n4,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Phase": st.column_config.TextColumn("Phase", disabled=True),
+                "Group A (min)": st.column_config.NumberColumn("Group A (min)", min_value=0, max_value=240, required=True),
+                "Group B (min)": st.column_config.NumberColumn("Group B (min)", min_value=0, max_value=240, required=True),
+                "Group C (min)": st.column_config.NumberColumn("Group C (min)", min_value=0, max_value=240, required=True),
+                "Group D (min)": st.column_config.NumberColumn("Group D (min)", min_value=0, max_value=240, required=True),
+            },
+            key="adv_phase_editor_n3n4",
+        )
+        st.session_state.adv_phase_durations_n3n4 = adv_phase_table_n3n4
+
+        PHASE_DURATIONS_BY_PAIR_N3N4 = {
+            pair: {
+                phase: int(
+                    adv_phase_table_n3n4.loc[
+                        adv_phase_table_n3n4["Phase"] == phase,
+                        f"{pair} (min)"
+                    ].iloc[0]
+                )
+                for phase in PHASES
+            }
+            for pair in PAIRS_N3N4
+        }
+
+        pair_plant_defaults_n3n4 = load_plant_cycle_defaults_weighted(
+            PAIRS_N3N4, PAIR_MODULE_N3N4, PAIR_YIELD_FORMULA_N3N4,
+        )
+        ENERGY_YIELD_N3N4_VERSION = 1
+        energy_yield_n3n4_cols = ["Pair", "Energy per Cycle (kWh)", "Yield per Cycle (kg CO2)"]
+        get_versioned_default_table(
+            "energy_yield_tab4_n3n4", energy_yield_n3n4_cols, ENERGY_YIELD_N3N4_VERSION,
+            lambda: pd.DataFrame({
+                "Pair": PAIRS_N3N4,
+                "Energy per Cycle (kWh)": [pair_plant_defaults_n3n4[p][0] for p in PAIRS_N3N4],
+                "Yield per Cycle (kg CO2)": [pair_plant_defaults_n3n4[p][1] for p in PAIRS_N3N4],
+            }),
+        )
+        energy_yield_table_n3n4 = st.data_editor(
+            st.session_state.energy_yield_tab4_n3n4,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Pair": st.column_config.TextColumn("Pair", disabled=True),
+                "Energy per Cycle (kWh)": st.column_config.NumberColumn("Energy per Cycle (kWh)", min_value=0.0, step=0.1, required=True),
+                "Yield per Cycle (kg CO2)": st.column_config.NumberColumn("Yield per Cycle (kg CO2)", min_value=0.0, step=0.1, required=True),
+            },
+            key="energy_yield_editor_n3n4",
+        )
+        st.session_state.energy_yield_tab4_n3n4 = energy_yield_table_n3n4
+
+        PAIR_ENERGY_PER_CYCLE_N3N4 = {
+            pair: float(energy_yield_table_n3n4.loc[energy_yield_table_n3n4["Pair"] == pair, "Energy per Cycle (kWh)"].iloc[0])
+            for pair in PAIRS_N3N4
+        }
+        PAIR_YIELD_PER_CYCLE_N3N4 = {
+            pair: float(energy_yield_table_n3n4.loc[energy_yield_table_n3n4["Pair"] == pair, "Yield per Cycle (kg CO2)"].iloc[0])
+            for pair in PAIRS_N3N4
+        }
+        # This configuration's Generate button and results are rendered here
+        # (filled in further down, once the scheduler is defined).
+        adv_results_slot_n3n4 = st.container()
 
     def run_advanced_interleaved(pairs, phase_durations_by_pair, total_minutes, enforce_evac_cool, free_adsorption_overlap=False):
         """
@@ -4094,49 +4112,92 @@ with tab4:
         st.pyplot(fig)
         plt.close(fig)
 
-    if st.button("Generate Advanced Interleaved Schedules (6-6-4, 8-4-4, 6-5-5, 4-4-4-4 & 2-2-2-2 N3/N4)", key="adv_generate"):
-        adv_schedule = run_advanced_interleaved(PAIRS, PHASE_DURATIONS_BY_PAIR, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
-        adv_schedule_844 = run_advanced_interleaved(PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
-        adv_schedule_655 = run_advanced_interleaved(PAIRS_6_5_5, PHASE_DURATIONS_BY_PAIR_655, TOTAL_MINUTES_ADV, adv_enforce_evac_cool)
-        adv_schedule_4x4 = run_advanced_interleaved(
-            PAIRS_4X4, PHASE_DURATIONS_BY_PAIR_4X4, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
-            free_adsorption_overlap=True,
+    gantt_colors = {
+        'Adsorption': '#4B9CD3',
+        'Evacuation': '#FFB347',
+        'NCG Purging': '#FFD700',
+        'Heating': '#E97451',
+        'CO2 Purging': '#90EE90',
+        'Cooling': '#9370DB',
+        'Repressurization': '#B0B0B0'
+    }
+    IDLE_GANTT_COLOR = '#D9D9D9'
+
+    def _draw_advanced_gantt(schedule_df, total_minutes, title):
+        fig, ax = plt.subplots(figsize=(14, 5))
+        for _, row in schedule_df.iterrows():
+            ax.barh(
+                row["Pair"],
+                row["End"] - row["Start"],
+                left=row["Start"],
+                color=gantt_colors.get(row["Phase"], "#888"),
+                edgecolor="black"
+            )
+        # Idle segments: the gaps in each pair's own timeline where it isn't
+        # scheduled in any phase at all (e.g. waiting on a shared resource) —
+        # drawn on top of the same bars rather than replacing the separate
+        # "Pair Utilisation & Idle Time" table/chart above, which still shows
+        # the totals.
+        for pair in schedule_df["Pair"].unique():
+            pair_rows = schedule_df[schedule_df["Pair"] == pair].sort_values("Start")
+            cursor = 0
+            for _, row in pair_rows.iterrows():
+                if row["Start"] > cursor:
+                    ax.barh(pair, row["Start"] - cursor, left=cursor, color=IDLE_GANTT_COLOR, edgecolor="black", hatch="//")
+                cursor = max(cursor, row["End"])
+            if cursor < total_minutes:
+                ax.barh(pair, total_minutes - cursor, left=cursor, color=IDLE_GANTT_COLOR, edgecolor="black", hatch="//")
+        ax.set_xlabel("Time (minutes)")
+        ax.set_ylabel("Pairs")
+        ax.set_title(title)
+        ax.set_xlim(0, total_minutes)
+        ax.grid(True, axis="x", linestyle="--", alpha=0.4)
+        legend_labels = PHASES + ["Idle"]
+        legend_colors = [gantt_colors[p] for p in PHASES] + [IDLE_GANTT_COLOR]
+        ax.legend(
+            [plt.Rectangle((0, 0), 1, 1, color=c) for c in legend_colors],
+            legend_labels,
+            loc="upper right",
+            fontsize=8
         )
-        adv_schedule_n3n4 = run_advanced_interleaved(
-            PAIRS_N3N4, PHASE_DURATIONS_BY_PAIR_N3N4, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
-            free_adsorption_overlap=True,
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+
+    def _run_and_display_adv_config(title, comparison_key, pairs, durations_by_pair,
+                                    yield_per_cycle, energy_per_cycle, free_adsorption_overlap, rate_caption):
+        """Schedule one Advanced Interleaved configuration and render its results
+        (cycles, yield/energy, utilisation, idle breakdown, Gantt chart)."""
+        schedule_df = run_advanced_interleaved(
+            pairs, durations_by_pair, TOTAL_MINUTES_ADV, adv_enforce_evac_cool,
+            free_adsorption_overlap=free_adsorption_overlap,
         )
+        st.markdown(f"### Results: {title}")
 
-        st.markdown("# 3-Pair Configurations")
-        st.caption("Original Adsorption-overlap rule: one privileged pair can overlap with the other two, which cannot overlap each other.")
-
-        st.markdown("## 6-6-4 Configuration")
-        st.markdown("### Complete Cycles")
-
-        yield_energy_df = _complete_cycles_and_yield_energy(adv_schedule, PAIRS, PAIR_YIELD_PER_CYCLE, PAIR_ENERGY_PER_CYCLE)
+        st.markdown("#### Complete Cycles")
+        yield_energy_df = _complete_cycles_and_yield_energy(schedule_df, pairs, yield_per_cycle, energy_per_cycle)
         st.dataframe(yield_energy_df[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
 
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the combined per-cycle rate of every module in that pair.")
+        st.markdown("#### Yield & Energy Analysis")
+        st.caption(rate_caption)
         st.dataframe(yield_energy_df, use_container_width=True, hide_index=True)
-
         ye_metric_col1, ye_metric_col2 = st.columns(2)
         with ye_metric_col1:
             st.metric("Plant Total Yield", f"{yield_energy_df['Total Yield (kg CO2)'].sum():.1f} kg CO2")
         with ye_metric_col2:
             st.metric("Plant Total Energy", f"{yield_energy_df['Total Energy (kWh)'].sum():.1f} kWh")
 
-        st.markdown("### Pair Utilisation & Idle Time")
+        st.markdown("#### Pair Utilisation & Idle Time")
         st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        util_df = _pair_utilization(adv_schedule, PAIRS, TOTAL_MINUTES_ADV)
+        util_df = _pair_utilization(schedule_df, pairs, TOTAL_MINUTES_ADV)
         st.dataframe(util_df, use_container_width=True, hide_index=True)
-        _draw_idle_chart(util_df, "Idle Time per Pair — 6-6-4 Configuration")
-        _show_idle_breakdown(adv_schedule, PAIRS)
+        _draw_idle_chart(util_df, f"Idle Time per Pair — {title}")
+        _show_idle_breakdown(schedule_df, pairs)
 
         # Publish totals for the Yield vs Cycles comparison tab. Only refreshes when
-        # this "Generate" button is (re)clicked — see that tab's caption for why.
+        # this configuration's "Generate" button is (re)clicked — see that tab's caption.
         st.session_state.setdefault("process_comparison", {})
-        st.session_state["process_comparison"]["Advanced Interleaved (6-6-4)"] = {
+        st.session_state["process_comparison"][comparison_key] = {
             "Total Cycles": int(yield_energy_df["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df["Total Energy (kWh)"].sum()),
@@ -4144,218 +4205,44 @@ with tab4:
             "Avg Utilisation %": round(float(util_df["Utilisation %"].mean()), 1),
         }
 
-        st.markdown("## 8-4-4 Configuration")
-        st.markdown("### Complete Cycles")
+        st.markdown("#### Gantt Chart")
+        _draw_advanced_gantt(schedule_df, TOTAL_MINUTES_ADV, f"Advanced Interleaved Schedule - {title}")
+        with st.expander(f"Schedule Data ({title})"):
+            st.dataframe(schedule_df, use_container_width=True, hide_index=True)
 
-        yield_energy_df_844 = _complete_cycles_and_yield_energy(
-            adv_schedule_844, PAIRS_8_4_4, PAIR_YIELD_PER_CYCLE_844, PAIR_ENERGY_PER_CYCLE_844
-        )
-        st.dataframe(yield_energy_df_844[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
-        st.dataframe(yield_energy_df_844, use_container_width=True, hide_index=True)
-
-        ye_metric_col1_844, ye_metric_col2_844 = st.columns(2)
-        with ye_metric_col1_844:
-            st.metric("Plant Total Yield", f"{yield_energy_df_844['Total Yield (kg CO2)'].sum():.1f} kg CO2")
-        with ye_metric_col2_844:
-            st.metric("Plant Total Energy", f"{yield_energy_df_844['Total Energy (kWh)'].sum():.1f} kWh")
-
-        st.markdown("### Pair Utilisation & Idle Time")
-        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        util_df_844 = _pair_utilization(adv_schedule_844, PAIRS_8_4_4, TOTAL_MINUTES_ADV)
-        st.dataframe(util_df_844, use_container_width=True, hide_index=True)
-        _draw_idle_chart(util_df_844, "Idle Time per Pair — 8-4-4 Configuration")
-        _show_idle_breakdown(adv_schedule_844, PAIRS_8_4_4)
-
-        # Publish 8-4-4 totals too, alongside the 6-6-4 entry above.
-        st.session_state["process_comparison"]["Advanced Interleaved (8-4-4)"] = {
-            "Total Cycles": int(yield_energy_df_844["Complete Cycles"].sum()),
-            "Total Yield (kg CO2)": float(yield_energy_df_844["Total Yield (kg CO2)"].sum()),
-            "Total Energy (kWh)": float(yield_energy_df_844["Total Energy (kWh)"].sum()),
-            "Avg Idle (min)": round(float(util_df_844["Idle (min)"].mean()), 1),
-            "Avg Utilisation %": round(float(util_df_844["Utilisation %"].mean()), 1),
-        }
-
-        st.markdown("## 6-5-5 Configuration")
-        st.markdown("### Complete Cycles")
-
-        yield_energy_df_655 = _complete_cycles_and_yield_energy(
-            adv_schedule_655, PAIRS_6_5_5, PAIR_YIELD_PER_CYCLE_655, PAIR_ENERGY_PER_CYCLE_655
-        )
-        st.dataframe(yield_energy_df_655[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
-        st.dataframe(yield_energy_df_655, use_container_width=True, hide_index=True)
-
-        ye_metric_col1_655, ye_metric_col2_655 = st.columns(2)
-        with ye_metric_col1_655:
-            st.metric("Plant Total Yield", f"{yield_energy_df_655['Total Yield (kg CO2)'].sum():.1f} kg CO2")
-        with ye_metric_col2_655:
-            st.metric("Plant Total Energy", f"{yield_energy_df_655['Total Energy (kWh)'].sum():.1f} kWh")
-
-        st.markdown("### Pair Utilisation & Idle Time")
-        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        util_df_655 = _pair_utilization(adv_schedule_655, PAIRS_6_5_5, TOTAL_MINUTES_ADV)
-        st.dataframe(util_df_655, use_container_width=True, hide_index=True)
-        _draw_idle_chart(util_df_655, "Idle Time per Pair — 6-5-5 Configuration")
-        _show_idle_breakdown(adv_schedule_655, PAIRS_6_5_5)
-
-        st.session_state["process_comparison"]["Advanced Interleaved (6-5-5)"] = {
-            "Total Cycles": int(yield_energy_df_655["Complete Cycles"].sum()),
-            "Total Yield (kg CO2)": float(yield_energy_df_655["Total Yield (kg CO2)"].sum()),
-            "Total Energy (kWh)": float(yield_energy_df_655["Total Energy (kWh)"].sum()),
-            "Avg Idle (min)": round(float(util_df_655["Idle (min)"].mean()), 1),
-            "Avg Utilisation %": round(float(util_df_655["Utilisation %"].mean()), 1),
-        }
-
-        st.markdown("# 4-Pair Configurations")
-        st.caption("Free Adsorption overlap: every pair's Adsorption can overlap with every other pair's.")
-
-        st.markdown("## 4-4-4-4 Configuration")
-        st.markdown("### Complete Cycles")
-
-        yield_energy_df_4x4 = _complete_cycles_and_yield_energy(
-            adv_schedule_4x4, PAIRS_4X4, PAIR_YIELD_PER_CYCLE_4X4, PAIR_ENERGY_PER_CYCLE_4X4
-        )
-        st.dataframe(yield_energy_df_4x4[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
-        st.dataframe(yield_energy_df_4x4, use_container_width=True, hide_index=True)
-
-        ye_metric_col1_4x4, ye_metric_col2_4x4 = st.columns(2)
-        with ye_metric_col1_4x4:
-            st.metric("Plant Total Yield", f"{yield_energy_df_4x4['Total Yield (kg CO2)'].sum():.1f} kg CO2")
-        with ye_metric_col2_4x4:
-            st.metric("Plant Total Energy", f"{yield_energy_df_4x4['Total Energy (kWh)'].sum():.1f} kWh")
-
-        st.markdown("### Pair Utilisation & Idle Time")
-        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        util_df_4x4 = _pair_utilization(adv_schedule_4x4, PAIRS_4X4, TOTAL_MINUTES_ADV)
-        st.dataframe(util_df_4x4, use_container_width=True, hide_index=True)
-        _draw_idle_chart(util_df_4x4, "Idle Time per Pair — 4-4-4-4 Configuration")
-        _show_idle_breakdown(adv_schedule_4x4, PAIRS_4X4)
-
-        st.session_state["process_comparison"]["Advanced Interleaved (4-4-4-4)"] = {
-            "Total Cycles": int(yield_energy_df_4x4["Complete Cycles"].sum()),
-            "Total Yield (kg CO2)": float(yield_energy_df_4x4["Total Yield (kg CO2)"].sum()),
-            "Total Energy (kWh)": float(yield_energy_df_4x4["Total Energy (kWh)"].sum()),
-            "Avg Idle (min)": round(float(util_df_4x4["Idle (min)"].mean()), 1),
-            "Avg Utilisation %": round(float(util_df_4x4["Utilisation %"].mean()), 1),
-        }
-
-        st.markdown("## 2-2-2-2 (N3/N4) Configuration")
-        st.markdown("### Complete Cycles")
-
-        yield_energy_df_n3n4 = _complete_cycles_and_yield_energy(
-            adv_schedule_n3n4, PAIRS_N3N4, PAIR_YIELD_PER_CYCLE_N3N4, PAIR_ENERGY_PER_CYCLE_N3N4
-        )
-        st.dataframe(yield_energy_df_n3n4[["Pair", "Complete Cycles"]], use_container_width=True, hide_index=True)
-
-        st.markdown("### Yield & Energy Analysis")
-        st.caption("Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair.")
-        st.dataframe(yield_energy_df_n3n4, use_container_width=True, hide_index=True)
-
-        ye_metric_col1_n3n4, ye_metric_col2_n3n4 = st.columns(2)
-        with ye_metric_col1_n3n4:
-            st.metric("Plant Total Yield", f"{yield_energy_df_n3n4['Total Yield (kg CO2)'].sum():.1f} kg CO2")
-        with ye_metric_col2_n3n4:
-            st.metric("Plant Total Energy", f"{yield_energy_df_n3n4['Total Energy (kWh)'].sum():.1f} kWh")
-
-        st.markdown("### Pair Utilisation & Idle Time")
-        st.caption("Active = time in any phase. Idle = waiting/unused time. Utilisation % = Active ÷ Operating Period.")
-        util_df_n3n4 = _pair_utilization(adv_schedule_n3n4, PAIRS_N3N4, TOTAL_MINUTES_ADV)
-        st.dataframe(util_df_n3n4, use_container_width=True, hide_index=True)
-        _draw_idle_chart(util_df_n3n4, "Idle Time per Pair — 2-2-2-2 (N3/N4) Configuration")
-        _show_idle_breakdown(adv_schedule_n3n4, PAIRS_N3N4)
-
-        st.session_state["process_comparison"]["Advanced Interleaved (2-2-2-2 N3/N4)"] = {
-            "Total Cycles": int(yield_energy_df_n3n4["Complete Cycles"].sum()),
-            "Total Yield (kg CO2)": float(yield_energy_df_n3n4["Total Yield (kg CO2)"].sum()),
-            "Total Energy (kWh)": float(yield_energy_df_n3n4["Total Energy (kWh)"].sum()),
-            "Avg Idle (min)": round(float(util_df_n3n4["Idle (min)"].mean()), 1),
-            "Avg Utilisation %": round(float(util_df_n3n4["Utilisation %"].mean()), 1),
-        }
-
-        gantt_colors = {
-            'Adsorption': '#4B9CD3',
-            'Evacuation': '#FFB347',
-            'NCG Purging': '#FFD700',
-            'Heating': '#E97451',
-            'CO2 Purging': '#90EE90',
-            'Cooling': '#9370DB',
-            'Repressurization': '#B0B0B0'
-        }
-        IDLE_GANTT_COLOR = '#D9D9D9'
-
-        def _draw_advanced_gantt(schedule_df, total_minutes, title):
-            fig, ax = plt.subplots(figsize=(14, 5))
-            for _, row in schedule_df.iterrows():
-                ax.barh(
-                    row["Pair"],
-                    row["End"] - row["Start"],
-                    left=row["Start"],
-                    color=gantt_colors.get(row["Phase"], "#888"),
-                    edgecolor="black"
-                )
-            # Idle segments: the gaps in each pair's own timeline where it isn't
-            # scheduled in any phase at all (e.g. waiting on a shared resource) —
-            # drawn on top of the same bars rather than replacing the separate
-            # "Pair Utilisation & Idle Time" table/chart above, which still shows
-            # the totals.
-            for pair in schedule_df["Pair"].unique():
-                pair_rows = schedule_df[schedule_df["Pair"] == pair].sort_values("Start")
-                cursor = 0
-                for _, row in pair_rows.iterrows():
-                    if row["Start"] > cursor:
-                        ax.barh(pair, row["Start"] - cursor, left=cursor, color=IDLE_GANTT_COLOR, edgecolor="black", hatch="//")
-                    cursor = max(cursor, row["End"])
-                if cursor < total_minutes:
-                    ax.barh(pair, total_minutes - cursor, left=cursor, color=IDLE_GANTT_COLOR, edgecolor="black", hatch="//")
-            ax.set_xlabel("Time (minutes)")
-            ax.set_ylabel("Pairs")
-            ax.set_title(title)
-            ax.set_xlim(0, total_minutes)
-            ax.grid(True, axis="x", linestyle="--", alpha=0.4)
-            legend_labels = PHASES + ["Idle"]
-            legend_colors = [gantt_colors[p] for p in PHASES] + [IDLE_GANTT_COLOR]
-            ax.legend(
-                [plt.Rectangle((0, 0), 1, 1, color=c) for c in legend_colors],
-                legend_labels,
-                loc="upper right",
-                fontsize=8
+    # Each configuration's Generate button sits on its own tab, right under its
+    # inputs; the button at the top runs all five.
+    PER_PAIR_RATE = "Total Yield/Energy = Complete Cycles × the per-cycle rate for that pair."
+    ADV_RUNS = [
+        ("6-6-4", adv_results_slot_664, (
+            "6-6-4 Configuration", "Advanced Interleaved (6-6-4)", PAIRS, PHASE_DURATIONS_BY_PAIR,
+            PAIR_YIELD_PER_CYCLE, PAIR_ENERGY_PER_CYCLE, False,
+            "Total Yield/Energy = Complete Cycles × the combined per-cycle rate of every module in that pair.",
+        )),
+        ("8-4-4", adv_results_slot_844, (
+            "8-4-4 Configuration", "Advanced Interleaved (8-4-4)", PAIRS_8_4_4, PHASE_DURATIONS_BY_PAIR_844,
+            PAIR_YIELD_PER_CYCLE_844, PAIR_ENERGY_PER_CYCLE_844, False, PER_PAIR_RATE,
+        )),
+        ("6-5-5", adv_results_slot_655, (
+            "6-5-5 Configuration", "Advanced Interleaved (6-5-5)", PAIRS_6_5_5, PHASE_DURATIONS_BY_PAIR_655,
+            PAIR_YIELD_PER_CYCLE_655, PAIR_ENERGY_PER_CYCLE_655, False, PER_PAIR_RATE,
+        )),
+        ("4-4-4-4", adv_results_slot_4x4, (
+            "4-4-4-4 Configuration", "Advanced Interleaved (4-4-4-4)", PAIRS_4X4, PHASE_DURATIONS_BY_PAIR_4X4,
+            PAIR_YIELD_PER_CYCLE_4X4, PAIR_ENERGY_PER_CYCLE_4X4, True, PER_PAIR_RATE,
+        )),
+        ("2-2-2-2 N3/N4", adv_results_slot_n3n4, (
+            "2-2-2-2 (N3/N4) Configuration", "Advanced Interleaved (2-2-2-2 N3/N4)", PAIRS_N3N4, PHASE_DURATIONS_BY_PAIR_N3N4,
+            PAIR_YIELD_PER_CYCLE_N3N4, PAIR_ENERGY_PER_CYCLE_N3N4, True, PER_PAIR_RATE,
+        )),
+    ]
+    for adv_label, adv_slot, adv_args in ADV_RUNS:
+        with adv_slot:
+            adv_clicked = st.button(
+                f"Generate {adv_label} Schedule", key=f"adv_generate_{adv_label}", type="primary",
             )
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-
-        st.markdown("### Advanced Interleaved Gantt Chart (6-6-4 Configuration)")
-        _draw_advanced_gantt(adv_schedule, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 6-6-4 Configuration")
-        with st.expander("Schedule Data (6-6-4 Configuration)"):
-            st.dataframe(adv_schedule, use_container_width=True, hide_index=True)
-
-        st.markdown("### Advanced Interleaved Gantt Chart (8-4-4 Configuration)")
-        _draw_advanced_gantt(adv_schedule_844, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 8-4-4 Configuration")
-        with st.expander("Schedule Data (8-4-4 Configuration)"):
-            st.dataframe(adv_schedule_844, use_container_width=True, hide_index=True)
-
-        st.markdown("### Advanced Interleaved Gantt Chart (6-5-5 Configuration)")
-        _draw_advanced_gantt(adv_schedule_655, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 6-5-5 Configuration")
-        with st.expander("Schedule Data (6-5-5 Configuration)"):
-            st.dataframe(adv_schedule_655, use_container_width=True, hide_index=True)
-
-        st.markdown("### Advanced Interleaved Gantt Chart (4-4-4-4 Configuration)")
-        _draw_advanced_gantt(adv_schedule_4x4, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 4-4-4-4 Configuration")
-        with st.expander("Schedule Data (4-4-4-4 Configuration)"):
-            st.dataframe(adv_schedule_4x4, use_container_width=True, hide_index=True)
-
-        st.markdown("### Advanced Interleaved Gantt Chart (2-2-2-2 N3/N4 Configuration)")
-        _draw_advanced_gantt(adv_schedule_n3n4, TOTAL_MINUTES_ADV, "Advanced Interleaved Schedule - 2-2-2-2 (N3/N4) Configuration")
-        with st.expander("Schedule Data (2-2-2-2 N3/N4 Configuration)"):
-            st.dataframe(adv_schedule_n3n4, use_container_width=True, hide_index=True)
+            if adv_clicked or adv_generate_all:
+                _run_and_display_adv_config(*adv_args)
 
 with tab5:
     # Cross-process comparison. Reads whatever tab3 (Concurrent/Interleaved) and
