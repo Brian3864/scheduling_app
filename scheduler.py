@@ -2792,6 +2792,26 @@ with tab3:
             plt.tight_layout()
             st.pyplot(fig2)
 
+        # === Baseline vs Concurrent vs Interleaved Comparison ===
+        st.markdown("### Baseline vs Concurrent vs Interleaved Comparison")
+        target_pct = 80  # % increase over baseline
+        pct_conc_vs_baseline = ((cycles_conc - cycles_baseline) / cycles_baseline * 100) if cycles_baseline > 0 else 0
+        pct_int_vs_baseline = ((cycles_int - cycles_baseline) / cycles_baseline * 100) if cycles_baseline > 0 else 0
+        # Bar chart
+        fig_comp, ax_comp = plt.subplots(figsize=(8, 3))
+        bars = ax_comp.bar(["Baseline (A only)", "Concurrent (A+B)", "Interleaved (A+B)"],
+                           [cycles_baseline, cycles_conc, cycles_int],
+                           color=["#95a5a6", "#6C5CE7", "#E07C5E"], alpha=0.85, edgecolor="black")
+        ax_comp.set_ylabel("Total Complete Cycles")
+        ax_comp.set_title(f"Output comparison (target: ≥{target_pct}% increase over baseline)")
+        for b in bars:
+            ax_comp.annotate(f"{int(b.get_height())}", xy=(b.get_x() + b.get_width()/2, b.get_height()),
+                             ha="center", va="bottom", fontsize=12)
+        ax_comp.set_ylim(0, max(cycles_baseline, cycles_int, cycles_conc) * 1.2)
+        plt.tight_layout()
+        st.pyplot(fig_comp)
+        plt.close(fig_comp)
+
         # Diagnostic: Adsorption durations by module
         groups_equal = PHASE_DURATIONS_BY_GROUP[GROUP_IDS[0]] == PHASE_DURATIONS_BY_GROUP[GROUP_IDS[1]]
         ads_df = schedule_int[(schedule_int["Phase"] == "Adsorption") & schedule_int["Complete"]].copy()
@@ -2879,6 +2899,92 @@ with tab3:
         st.session_state["process_comparison"][f"Concurrent{comparison_suffix}"]["Avg Utilisation %"] = round(float(util_conc["Utilisation %"].mean()), 1)
         st.session_state["process_comparison"][f"Interleaved{comparison_suffix}"]["Avg Idle (min)"] = round(float(util_int["Idle (min)"].mean()), 1)
         st.session_state["process_comparison"][f"Interleaved{comparison_suffix}"]["Avg Utilisation %"] = round(float(util_int["Utilisation %"].mean()), 1)
+
+        # Distinct colors for Interleaved vs Concurrent (not Adsorption/Desorption)
+        color_interleaved = "#E07C5E"
+        color_concurrent = "#6C5CE7"
+        # Utilisation bar chart (side by side) with value labels
+        fig_util, ax_util = plt.subplots(figsize=(12, 4))
+        x = np.arange(len(MODULES))
+        w = 0.35
+        bars_conc = ax_util.bar(x - w/2, util_conc["Utilisation %"], w, label="Concurrent", color=color_concurrent, alpha=0.85)
+        bars_int = ax_util.bar(x + w/2, util_int["Utilisation %"], w, label="Interleaved", color=color_interleaved, alpha=0.85)
+        for bar in bars_int:
+            h = bar.get_height()
+            if h > 5:
+                ax_util.annotate(f"{h:.0f}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_interleaved)
+        for bar in bars_conc:
+            h = bar.get_height()
+            if h > 5:
+                ax_util.annotate(f"{h:.0f}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_concurrent)
+        ax_util.set_xlabel("Module")
+        ax_util.set_ylabel("Utilisation %")
+        ax_util.set_title("Module Utilisation (Active Time / Total Time)")
+        ax_util.set_xticks(x)
+        ax_util.set_xticklabels([f"M{m}" for m in MODULES])
+        ax_util.legend()
+        ax_util.set_ylim(0, 115)
+        plt.tight_layout()
+        st.pyplot(fig_util)
+        plt.close(fig_util)
+
+        # Idle time comparison with value labels
+        fig_idle, ax_idle = plt.subplots(figsize=(12, 4))
+        bars_idle_conc = ax_idle.bar(x - w/2, util_conc["Idle (min)"], w, label="Concurrent", color=color_concurrent, alpha=0.85)
+        bars_idle_int = ax_idle.bar(x + w/2, util_int["Idle (min)"], w, label="Interleaved", color=color_interleaved, alpha=0.85)
+        for bar in bars_idle_int:
+            h = bar.get_height()
+            if h > 2:
+                ax_idle.annotate(f"{int(h)}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_interleaved)
+        for bar in bars_idle_conc:
+            h = bar.get_height()
+            if h > 2:
+                ax_idle.annotate(f"{int(h)}", xy=(bar.get_x() + bar.get_width()/2, h), ha="center", va="bottom", fontsize=7, color=color_concurrent)
+        ax_idle.set_xlabel("Module")
+        ax_idle.set_ylabel("Idle (minutes)")
+        ax_idle.set_title("Idle Time per Module (waiting / unused)")
+        ax_idle.set_xticks(x)
+        ax_idle.set_xticklabels([f"M{m}" for m in MODULES])
+        ax_idle.legend()
+        plt.tight_layout()
+        st.pyplot(fig_idle)
+        plt.close(fig_idle)
+
+        # Phase breakdown (time per phase)
+        st.markdown("### Phase Breakdown (Total Minutes per Phase)")
+        st.caption("Total minutes spent in each phase, all modules combined")
+        phase_totals_int = schedule_int.groupby("Phase").apply(lambda g: (g["End"] - g["Start"]).sum()).reindex(PHASES, fill_value=0)
+        phase_totals_conc = schedule_conc.groupby("Phase").apply(lambda g: (g["End"] - g["Start"]).sum()).reindex(PHASES, fill_value=0)
+        colors_phase = ['#4B9CD3', '#FFB347', '#FFD700', '#E97451', '#90EE90', '#9370DB']
+        pbrk_col1, pbrk_col2 = st.columns(2)
+        total_conc = phase_totals_conc.sum() or 1
+        total_int = phase_totals_int.sum() or 1
+        pct_conc = (phase_totals_conc.values / total_conc) * 100
+        pct_int = (phase_totals_int.values / total_int) * 100
+        with pbrk_col1:
+            st.caption("Concurrent")
+            fig_phase, ax_phase = plt.subplots(figsize=(6, 3.5))
+            bars_conc = ax_phase.barh(PHASES, phase_totals_conc.values, color=colors_phase[:len(PHASES)])
+            for bar, pct in zip(bars_conc, pct_conc):
+                ax_phase.annotate(f"{pct:.1f}%", xy=(bar.get_width(), bar.get_y() + bar.get_height()/2),
+                                 xytext=(5, 0), textcoords="offset points", va="center", fontsize=8)
+            ax_phase.set_xlabel("Total Minutes")
+            ax_phase.set_title("Concurrent")
+            plt.tight_layout()
+            st.pyplot(fig_phase)
+            plt.close(fig_phase)
+        with pbrk_col2:
+            st.caption("Interleaved")
+            fig_phase2, ax_phase2 = plt.subplots(figsize=(6, 3.5))
+            bars_int = ax_phase2.barh(PHASES, phase_totals_int.values, color=colors_phase[:len(PHASES)])
+            for bar, pct in zip(bars_int, pct_int):
+                ax_phase2.annotate(f"{pct:.1f}%", xy=(bar.get_width(), bar.get_y() + bar.get_height()/2),
+                                  xytext=(5, 0), textcoords="offset points", va="center", fontsize=8)
+            ax_phase2.set_xlabel("Total Minutes")
+            ax_phase2.set_title("Interleaved")
+            plt.tight_layout()
+            st.pyplot(fig_phase2)
+            plt.close(fig_phase2)
 
     # Each configuration's Generate button sits on its own tab, right under its
     # inputs; the button at the top runs all four.
