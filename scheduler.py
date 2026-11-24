@@ -730,6 +730,25 @@ def idle_breakdown_table(schedule_df, unit_col, units_by_label, total_minutes):
 
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
+# Spread the app's main tabs evenly across the full width instead of bunching
+# them on the left. Tabs nested inside a tab (the configuration tabs) keep
+# Streamlit's normal left-aligned layout.
+st.markdown(
+    """
+    <style>
+    div[data-testid="stTabs"] div[data-baseweb="tab-list"] { width: 100%; }
+    div[data-testid="stTabs"] div[data-baseweb="tab-list"] button[role="tab"] {
+        flex: 1 1 0;
+        justify-content: center;
+    }
+    div[data-testid="stTabs"] div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] button[role="tab"] {
+        flex: 0 0 auto;
+        justify-content: flex-start;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 tab3, tab4, tab5 = st.tabs(["Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
 
 if False:  # Module pair analysis removed (fan pairing fixed)
