@@ -570,30 +570,27 @@ def get_versioned_default_table(state_key, expected_columns, version, build_fn):
 
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
-**Tab 1: Full Schedule Analysis**
-- Four configurations, each on its own tab with its own "Generate" button (or run all four from the button at the top): the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; both are now directly recorded combinations in their own right, so Group A's Duration, Energy and Yield all come from N3N4-M1n3's own real average and Group B's from N3N4-M2n4's own real average — no more borrowing Group A's number for Group B, and no more type-matched sum for Yield either; only cycles logged on or after 2026-11-18 feed these defaults), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
-- Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
-- Scheduling is first-come-first-served in time order — no group has priority. NCG Purging → Heating → CO2 Purging runs as one unbroken block, and only one group can be in it at a time (Interleaved); the other group can evacuate, then waits. Group B can start pre-loaded (in Evacuation at minute 0) to avoid a startup gap
-- A cycle can start before the end of the operating period and run past it (the plant keeps going into the next day); only cycles that finish inside the period count toward cycles, yield and energy
-- Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
-- Gantt charts, cycle counts, phase breakdown (total minutes per phase), and an idle-time breakdown by cause, for every configuration
+**1. Full Schedule Analysis**
+- Two groups (A and B) in four plant sizes: 8-8, 4-4, 2-2, 6-6
+- Compares **Concurrent** vs **Interleaved** scheduling
+- Each configuration has its own tab: edit durations and capacities, then click **Generate**
 
-**Tab 2: Advanced Interleaved**
+**2. Advanced Interleaved**
+- Three or four pairs: 6-6-4, 8-4-4, 6-5-5, 4-4-4-4, 2-2-2-2 (N3/N4)
+- Adds Repressurization after Cooling
+- Each configuration has its own tab with its own **Generate** button
 
-Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Group A, Group B, and Group C.
-- Each pair cycles through Adsorption → Evacuation → NCG Purging → Heating → CO2 Purging → Cooling → Repressurization, scheduled first-come-first-served in time order with no pair favored
-- Adsorption is the only phase that can run for two pairs at once; Evacuation, the NCG → Heating → CO2 block (always run unbroken), Cooling and Repressurization are each limited to one pair at a time. A pair can evacuate while another holds the NCG → Heating → CO2 block, then waits
-- Evacuation takes priority over Cooling: if another pair evacuates while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the Evacuation ends
-- A cycle can start before the end of the operating period and run past it; only cycles that finish inside the period count as complete. Each configuration also shows an idle-time breakdown by cause
-- Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
-- Five configurations, each on its own tab with its own "Generate" button (or run all five from the button at the top), grouped into two families:
-  - **3-Pair Configurations** (original Adsorption-overlap rule: one privileged pair can overlap Adsorption with the other two, but those two cannot overlap each other): 6-6-4 and 8-4-4 (different module-to-pair groupings), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield)
-  - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: now that Nelion 4 has its own recorded cycles, every group sources Duration, Energy and Yield directly from its own matching Module — Group A/C from N3-M1n3/N3-M2n4, Group B/D from N4-M1n3/N4-M2n4 — with no mirroring across Nelions)
+**3. Yield vs Cycles**
+- Compares cycles, yield and energy across every configuration
+- Shows results from the last time each **Generate** was clicked
 
-*Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
+**Scheduling rules**
+- First come, first served; no group has priority
+- NCG Purging → Heating → CO2 Purging runs unbroken, one group at a time; the other group can evacuate, then waits
+- Evacuation pauses another group's Cooling
+- Only cycles that finish within the operating period count
 
-**Tab 3: Yield vs Cycles**
-Compares Total Cycles, Total Yield, and Total Energy across thirteen processes: Concurrent (8-8), Interleaved (8-8), Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
+*Durations come from live plant data; edit the tables if real timings differ.*
 """)
 
 with st.sidebar.expander("🛠️ Database diagnostics"):
