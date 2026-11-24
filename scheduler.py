@@ -571,8 +571,8 @@ def get_versioned_default_table(state_key, expected_columns, version, build_fn):
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
 **1. Full Schedule Analysis**
-- Two groups (A and B) in four plant sizes: 8-8, 4-4, 2-2, 6-6
-- Compares **Concurrent** vs **Interleaved** scheduling
+- Two groups (A and B) in four plant configuration: 8-8, 4-4, 2-2, 6-6.
+- Compares **Concurrent** vs **Interleaved** scheduling.
 - Each configuration has its own tab: edit durations and capacities, then click **Generate**
 
 **2. Advanced Interleaved**
