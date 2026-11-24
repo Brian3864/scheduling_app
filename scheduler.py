@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import html as html_lib
 import sqlalchemy
 from google.cloud.sql.connector import Connector
 from google.oauth2 import service_account
@@ -4378,12 +4379,12 @@ with tab5:
 
         # === Bottom line (rendered at the top of the tab via bottom_line_box) ===
         with bottom_line_box:
-            st.markdown("### Bottom Line")
             ranked = sorted(
                 [p for p in available_processes if levelized_cost_annual_map[p] is not None],
                 key=lambda p: levelized_cost_annual_map[p],
             )
             if not ranked:
+                st.markdown("### Bottom Line")
                 st.info(
                     "Levelized cost of capture can't be calculated yet: every generated process has a "
                     "yield of 0. Check the Yield per Cycle values in each configuration's tables."
@@ -4391,22 +4392,67 @@ with tab5:
             else:
                 best = ranked[0]
                 best_lc = levelized_cost_annual_map[best]
+                # "$" is written as &#36; throughout: Streamlit's markdown treats text
+                # between two "$" signs as a LaTeX formula.
+                best_name = html_lib.escape(best)
                 if len(ranked) > 1:
                     runner_up = ranked[1]
                     gap = levelized_cost_annual_map[runner_up] - best_lc
                     gap_pct = 100 * gap / levelized_cost_annual_map[runner_up]
-                    st.success(
-                        f"**{best}** has the lowest levelized cost of capture: **${best_lc:,.0f} per tonne CO2**, "
-                        f"${gap:,.0f}/tonne ({gap_pct:.0f}%) below the next best, {runner_up}."
+                    verdict = (
+                        f"<b>{best_name}</b> captures CO2 at the lowest cost, "
+                        f"<b>&#36;{gap:,.0f}/t ({gap_pct:.0f}%) cheaper</b> than the next best, "
+                        f"{html_lib.escape(runner_up)}."
                     )
                 else:
-                    st.success(f"**{best}**: levelized cost of capture **${best_lc:,.0f} per tonne CO2**.")
-                bl_col1, bl_col2, bl_col3, bl_col4 = st.columns(4)
-                bl_col1.metric("Levelized cost", f"${best_lc:,.0f}/t")
-                bl_col2.metric("Annual yield", f"{annual_yield_tonnes_map[best]:,.1f} t CO2")
-                bl_col3.metric("Cycles per day", f"{comparison[best]['Total Cycles']}")
-                if "Avg Idle (min)" in comparison[best]:
-                    bl_col4.metric("Avg idle per day", f"{comparison[best]['Avg Idle (min)']:,.0f} min")
+                    verdict = f"<b>{best_name}</b> is the only process with a levelized cost so far."
+                idle = comparison[best].get("Avg Idle (min)")
+                tiles = [
+                    ("Annual yield", f"{annual_yield_tonnes_map[best]:,.1f}", "t CO2 / year"),
+                    ("Cycles per day", f"{comparison[best]['Total Cycles']}", "complete cycles"),
+                    ("Avg idle per day", f"{idle:,.0f}" if idle is not None else "—", "minutes per unit"),
+                ]
+                tiles_html = "".join(
+                    f'<div class="bl-tile"><div class="bl-label">{label}</div>'
+                    f'<div class="bl-value">{value}</div><div class="bl-unit">{unit}</div></div>'
+                    for label, value, unit in tiles
+                )
+                st.markdown(
+                    f"""
+<style>
+.bl-card {{ background: linear-gradient(135deg, #0b3d2e 0%, #11694f 100%); color: #ffffff;
+           border-radius: 16px; padding: 24px 28px; margin: 4px 0 18px 0;
+           box-shadow: 0 6px 18px rgba(11, 61, 46, 0.25); }}
+.bl-eyebrow {{ font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+              color: #9be7c4; margin-bottom: 14px; }}
+.bl-hero {{ display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 28px; margin-bottom: 10px; }}
+.bl-hero-value {{ font-size: 3.4rem; font-weight: 800; line-height: 1; color: #ffffff; }}
+.bl-hero-unit {{ font-size: 1.1rem; font-weight: 600; color: #c8f2df; }}
+.bl-hero-label {{ font-size: 1rem; font-weight: 600; color: #9be7c4; }}
+.bl-verdict {{ font-size: 1.05rem; color: #e6fff4; margin: 8px 0 20px 0; }}
+.bl-verdict b {{ color: #ffffff; }}
+.bl-tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }}
+.bl-tile {{ background: rgba(255, 255, 255, 0.10); border: 1px solid rgba(255, 255, 255, 0.18);
+           border-radius: 12px; padding: 14px 16px; }}
+.bl-label {{ font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #9be7c4; }}
+.bl-value {{ font-size: 2rem; font-weight: 800; color: #ffffff; line-height: 1.2; margin-top: 4px; }}
+.bl-unit {{ font-size: 0.85rem; color: #c8f2df; }}
+</style>
+<div class="bl-card">
+  <div class="bl-eyebrow">Bottom line &middot; Levelized cost of capture</div>
+  <div class="bl-hero">
+    <div>
+      <div class="bl-hero-label">{best_name}</div>
+      <span class="bl-hero-value">&#36;{best_lc:,.0f}</span>
+      <span class="bl-hero-unit">per tonne CO2</span>
+    </div>
+  </div>
+  <div class="bl-verdict">{verdict}</div>
+  <div class="bl-tiles">{tiles_html}</div>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
                 ranking_df = pd.DataFrame([
                     {
                         "Rank": rank,
@@ -4418,7 +4464,17 @@ with tab5:
                     }
                     for rank, p in enumerate(ranked, start=1)
                 ])
-                st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    ranking_df.style.apply(
+                        lambda row: ["background-color: #d8f3e6; color: #0b3d2e; font-weight: 700"
+                                     if row["Rank"] == 1 else "" for _ in row],
+                        axis=1,
+                    ),
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "Levelized Cost ($/tonne CO2)": st.column_config.NumberColumn(format="dollar"),
+                    },
+                )
                 st.caption(
                     f"Ranked by levelized cost of capture, annual projection at a {capacity_factor:.0%} "
                     "capacity factor. Assumptions and the full cost breakdown are below."
