@@ -3872,8 +3872,8 @@ with tab5:
     # this doesn't recompute live on every input change.
     st.subheader("Yield, Energy & Cycles Comparison")
     st.caption(
-        "Uses each configuration's results from the last time its Generate button was clicked. "
-        "Re-click Generate in a tab to refresh it here."
+        "Shows the latest generated result only. Generating another configuration replaces it here; "
+        "use \"Generate all\" in a tab to compare several configurations at once."
     )
 
     PROCESS_ORDER = [
@@ -3900,14 +3900,12 @@ with tab5:
         "Advanced Interleaved (2-2-2-2 N3/N4)": "#2C7DA0",
     }
     comparison = st.session_state.get("process_comparison", {})
-    available_processes = [p for p in PROCESS_ORDER if p in comparison]
-    missing_processes = [p for p in PROCESS_ORDER if p not in comparison]
-
-    if missing_processes:
-        st.info(
-            "Missing: " + ", ".join(missing_processes) +
-            ". Generate a schedule in the relevant tab(s) to add them here."
-        )
+    # Only the latest run's results are shown: everything generated in the most
+    # recent click (Concurrent + Interleaved for one Full Schedule Analysis
+    # configuration, one Advanced Interleaved configuration, or a whole
+    # "Generate all" batch). Earlier results drop out once something new is generated.
+    latest_run = max((r.get("Run", 0) for r in comparison.values()), default=None)
+    available_processes = [p for p in PROCESS_ORDER if p in comparison and comparison[p].get("Run", 0) == latest_run]
 
     if not available_processes:
         st.warning("No results yet — generate a schedule in Full Schedule Analysis and/or Advanced Interleaved first.")
@@ -4389,46 +4387,30 @@ with tab5:
                 [p for p in available_processes if levelized_cost_annual_map[p] is not None],
                 key=lambda p: levelized_cost_annual_map[p],
             )
-            # The card features the most recently generated configuration: the
-            # processes published in the latest run (Concurrent + Interleaved for a
-            # Full Schedule Analysis configuration, one process for an Advanced
-            # Interleaved one, or several after a "Generate all").
-            latest_run = max(comparison[p].get("Run", 0) for p in available_processes)
-            latest = [p for p in available_processes if comparison[p].get("Run", 0) == latest_run]
-            latest_ranked = [p for p in ranked if p in latest]
-            if not latest_ranked:
+            # available_processes is already limited to the latest run (see the top of this tab).
+            if not ranked:
                 st.markdown("### Bottom Line")
                 st.info(
                     "Levelized cost of capture can't be calculated for the latest result ("
-                    + ", ".join(latest) + "): its yield is 0. Check the Yield per Cycle values in "
-                    "that configuration's tables."
+                    + ", ".join(available_processes) + "): its yield is 0. Check the Yield per Cycle "
+                    "values in that configuration's tables."
                 )
             else:
-                best = latest_ranked[0]
+                best = ranked[0]
                 best_lc = levelized_cost_annual_map[best]
                 # "$" is written as &#36; throughout: Streamlit's markdown treats text
                 # between two "$" signs as a LaTeX formula.
                 best_name = html_lib.escape(best)
-                verdict_parts = []
-                if len(latest_ranked) > 1:
-                    runner_up = latest_ranked[1]
+                if len(ranked) > 1:
+                    runner_up = ranked[1]
                     gap = levelized_cost_annual_map[runner_up] - best_lc
                     gap_pct = 100 * gap / levelized_cost_annual_map[runner_up]
-                    verdict_parts.append(
-                        f"<b>{best_name}</b> is the cheaper option in this run, "
+                    verdict = (
+                        f"<b>{best_name}</b> is the cheaper option, "
                         f"<b>&#36;{gap:,.0f}/t ({gap_pct:.0f}%) below</b> {html_lib.escape(runner_up)}."
                     )
-                overall_rank = ranked.index(best) + 1
-                if len(ranked) > 1:
-                    if overall_rank == 1:
-                        verdict_parts.append(f"Lowest of all {len(ranked)} processes generated so far.")
-                    else:
-                        leader = ranked[0]
-                        verdict_parts.append(
-                            f"Ranks #{overall_rank} of {len(ranked)} generated so far; the cheapest is "
-                            f"{html_lib.escape(leader)} at &#36;{levelized_cost_annual_map[leader]:,.0f}/t."
-                        )
-                verdict = " ".join(verdict_parts) or f"<b>{best_name}</b>: latest generated result."
+                else:
+                    verdict = f"<b>{best_name}</b>: latest generated result."
                 idle = comparison[best].get("Avg Idle (min)")
                 tiles = [
                     ("Annual yield", f"{annual_yield_tonnes_map[best]:,.1f}", "t CO2 / year"),
@@ -4499,7 +4481,6 @@ with tab5:
                     },
                 )
                 st.caption(
-                    f"All generated processes, ranked by levelized cost of capture (annual projection at a "
-                    f"{capacity_factor:.0%} capacity factor). The highlighted row is the latest result shown "
-                    "above. Assumptions and the full cost breakdown are below."
+                    f"Latest generated result, ranked by levelized cost of capture (annual projection at a "
+                    f"{capacity_factor:.0%} capacity factor). Assumptions and the full cost breakdown are below."
                 )
