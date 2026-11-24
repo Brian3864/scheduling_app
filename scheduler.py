@@ -736,14 +736,17 @@ st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe
 st.markdown(
     """
     <style>
-    div[data-testid="stTabs"] div[data-baseweb="tab-list"] { width: 100%; }
-    div[data-testid="stTabs"] div[data-baseweb="tab-list"] button[role="tab"] {
-        flex: 1 1 0;
-        justify-content: center;
+    [data-testid="stTabs"] [role="tablist"] {
+        width: 100% !important;
+        display: flex !important;
     }
-    div[data-testid="stTabs"] div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] button[role="tab"] {
-        flex: 0 0 auto;
-        justify-content: flex-start;
+    [data-testid="stTabs"] [role="tablist"] [role="tab"] {
+        flex: 1 1 0 !important;
+        justify-content: center !important;
+    }
+    [data-testid="stTabs"] [role="tabpanel"] [role="tablist"] [role="tab"] {
+        flex: 0 0 auto !important;
+        justify-content: flex-start !important;
     }
     </style>
     """,
