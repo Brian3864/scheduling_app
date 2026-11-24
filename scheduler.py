@@ -3865,11 +3865,8 @@ with tab5:
     # this doesn't recompute live on every input change.
     st.subheader("Yield, Energy & Cycles Comparison")
     st.caption(
-        "Shows each process's Total Cycles, Total Yield, and Total Energy from the last time its "
-        "own \"Generate\" button was clicked (Concurrent/Interleaved from Full Schedule Analysis, "
-        "both Advanced Interleaved configurations from the Advanced Interleaved tab's single "
-        "\"Generate Advanced Interleaved Schedules\" button). Re-click Generate in a tab to refresh "
-        "its numbers here."
+        "Uses each configuration's results from the last time its Generate button was clicked. "
+        "Re-click Generate in a tab to refresh it here."
     )
 
     PROCESS_ORDER = [
@@ -3908,29 +3905,39 @@ with tab5:
     if not available_processes:
         st.warning("No results yet — generate a schedule in Full Schedule Analysis and/or Advanced Interleaved first.")
     else:
-        opex_col1, opex_col2, opex_col3 = st.columns(3)
-        with opex_col1:
-            cost_per_kwh = st.number_input(
-                "Electricity cost ($ per kWh)", min_value=0.0, value=0.15, step=0.01,
-                help="Used below to convert each process's Total Energy into an OPEX line. "
-                     "Adjust to your actual electricity tariff.",
-                key="cost_per_kwh_tab5",
+        # Bottom line first: filled in at the end of this tab, once every cost is known.
+        bottom_line_box = st.container()
+
+        with st.expander("Assumptions: electricity and water tariffs, water use, capacity factor"):
+            opex_col1, opex_col2, opex_col3 = st.columns(3)
+            with opex_col1:
+                cost_per_kwh = st.number_input(
+                    "Electricity cost ($ per kWh)", min_value=0.0, value=0.15, step=0.01,
+                    help="Used below to convert each process's Total Energy into an OPEX line. "
+                         "Adjust to your actual electricity tariff.",
+                    key="cost_per_kwh_tab5",
+                )
+            with opex_col2:
+                water_per_cycle_l = st.number_input(
+                    "Water use per cycle (litres)", min_value=0.0, value=275.0, step=1.0,
+                    help="Litres of water consumed per completed cycle — applied to every "
+                         "configuration's Total Cycles as a second OPEX line alongside energy.",
+                    key="water_per_cycle_tab5",
+                )
+            with opex_col3:
+                cost_per_m3 = st.number_input(
+                    "Water cost ($ per m³)", min_value=0.0, value=32.0 / 5.5, step=0.01,
+                    help="Cost per cubic metre of water (1 m³ = 1000 L). Adjust to your actual "
+                         "water tariff.",
+                    key="cost_per_m3_tab5",
+                )
+                cost_per_litre = cost_per_m3 / 1000.0
+            capacity_factor = st.number_input(
+                "Capacity factor", min_value=0.0, max_value=1.0, value=0.70, step=0.01,
+                format="%.2f", key="capacity_factor_tab5",
+                help="Fraction of the year the plant effectively runs at the daily-schedule rate (0.70 = 70%).",
             )
-        with opex_col2:
-            water_per_cycle_l = st.number_input(
-                "Water use per cycle (litres)", min_value=0.0, value=275.0, step=1.0,
-                help="Litres of water consumed per completed cycle — applied to every "
-                     "configuration's Total Cycles as a second OPEX line alongside energy.",
-                key="water_per_cycle_tab5",
-            )
-        with opex_col3:
-            cost_per_m3 = st.number_input(
-                "Water cost ($ per m³)", min_value=0.0, value=32.0 / 5.5, step=0.01,
-                help="Cost per cubic metre of water (1 m³ = 1000 L). Adjust to your actual "
-                     "water tariff.",
-                key="cost_per_m3_tab5",
-            )
-            cost_per_litre = cost_per_m3 / 1000.0
+
         # Levelized Cost = (OPEX from energy + water + amortized CAPEX) ÷ Total Yield in tonnes.
         # CAPEX: each process is mapped to the CAPEX line item(s) for the physical Nelion(s)
         # it actually runs (see the CAPEX section below for the line items and
@@ -4017,181 +4024,7 @@ with tab5:
             for p in available_processes
         }
 
-        comparison_df = pd.DataFrame([
-            {
-                "Process": p,
-                "Total Cycles": comparison[p]["Total Cycles"],
-                "Total Yield (kg CO2)": round(comparison[p]["Total Yield (kg CO2)"], 1),
-                "Total Energy (kWh)": round(comparison[p]["Total Energy (kWh)"], 1),
-                "kWh per kg CO2": (
-                    round(comparison[p]["Total Energy (kWh)"] / comparison[p]["Total Yield (kg CO2)"], 3)
-                    if comparison[p]["Total Yield (kg CO2)"] > 0 else "—"
-                ),
-                "Water Cost ($)": round(water_opex_map[p], 2),
-                "Other OPEX ($)": round(misc_opex_daily, 2),
-                "Levelized Cost ($/tonne CO2)": (
-                    round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
-                ),
-            }
-            for p in available_processes
-        ])
-        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
-        st.caption(
-            "Levelized Cost = (Energy cost + Water cost + amortized CAPEX apportioned to one day + "
-            "Other OPEX apportioned to one day) ÷ Total Yield in tonnes. Water cost = Total Cycles × "
-            f"{water_per_cycle_l:g} L/cycle × water cost per litre. CAPEX is amortized over "
-            f"{amortization_years:g} years (Annual CAPEX ÷ 365 for the daily share). Other OPEX "
-            "(Maintenance, Casual Labour, Security, WW Disposable, Solar Lease) is a flat quarterly "
-            "total ÷ 90 days, the same for every process — see the CAPEX and Other Operational Costs "
-            "sections below to edit the line items, the amortization period, and which processes draw "
-            "on which CAPEX lines."
-        )
-
-        st.markdown("### Compare a parameter across processes")
-        selected_metric = st.selectbox(
-            "Parameter",
-            ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)", "Levelized Cost ($/tonne CO2)"],
-            key="comparison_metric",
-        )
-        if selected_metric == "Levelized Cost ($/tonne CO2)":
-            values = [levelized_cost_map[p] or 0.0 for p in available_processes]
-        else:
-            values = [comparison[p][selected_metric] for p in available_processes]
-        fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
-        bars = ax_bar.bar(
-            available_processes, values,
-            color=[PROCESS_COLORS[p] for p in available_processes],
-            edgecolor="black", alpha=0.9,
-        )
-        for bar in bars:
-            ax_bar.annotate(
-                f"{bar.get_height():,.1f}",
-                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                ha="center", va="bottom", fontsize=10,
-            )
-        ax_bar.set_title(f"{selected_metric} by Process")
-        ax_bar.set_ylabel(selected_metric)
-        ax_bar.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
-        plt.setp(ax_bar.get_xticklabels(), rotation=45, ha="right")
-        plt.tight_layout()
-        st.pyplot(fig_bar)
-        plt.close(fig_bar)
-
-        st.markdown("### Idle Time Summary")
-        st.caption(
-            "Average Idle (min) and Utilisation % across the day for each process — per module for "
-            "Full Schedule Analysis, per pair for Advanced Interleaved (that's the finest-grained unit "
-            "each scheduler tracks). Idle = Operating Period − Active (any phase); Cooling and "
-            "Repressurization count as busy, not idle."
-        )
-        idle_available = [p for p in available_processes if "Avg Idle (min)" in comparison[p]]
-        idle_stale = [p for p in available_processes if "Avg Idle (min)" not in comparison[p]]
-        if idle_stale:
-            st.info(
-                "Re-click Generate for: " + ", ".join(idle_stale) +
-                " to include them here (idle time wasn't recorded the last time they ran)."
-            )
-        if idle_available:
-            idle_df = pd.DataFrame([
-                {
-                    "Process": p,
-                    "Avg Idle (min)": comparison[p]["Avg Idle (min)"],
-                    "Avg Utilisation %": comparison[p]["Avg Utilisation %"],
-                }
-                for p in idle_available
-            ])
-            st.dataframe(idle_df, use_container_width=True, hide_index=True)
-
-            fig_idle, ax_idle = plt.subplots(figsize=(8, 5))
-            bars_idle = ax_idle.bar(
-                idle_available, [comparison[p]["Avg Idle (min)"] for p in idle_available],
-                color=[PROCESS_COLORS[p] for p in idle_available], edgecolor="black", alpha=0.9,
-            )
-            for bar in bars_idle:
-                ax_idle.annotate(
-                    f"{bar.get_height():,.1f}",
-                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                    ha="center", va="bottom", fontsize=10,
-                )
-            ax_idle.set_title("Average Idle Time (min) by Process")
-            ax_idle.set_ylabel("Avg Idle (min)")
-            plt.setp(ax_idle.get_xticklabels(), rotation=45, ha="right")
-            plt.tight_layout()
-            st.pyplot(fig_idle)
-            plt.close(fig_idle)
-
-        st.markdown("### Annualized Analysis")
-        st.caption(
-            "Scales each process's daily totals (from the schedule above) up to a full year: "
-            "Daily total × 365 days × capacity factor. The capacity factor accounts for planned "
-            "and unplanned downtime, since the plant won't run at the daily-schedule rate every "
-            "day of the year."
-        )
-        capacity_factor = st.number_input(
-            "Capacity factor", min_value=0.0, max_value=1.0, value=0.70, step=0.01,
-            format="%.2f", key="capacity_factor_tab5",
-            help="Fraction of the year the plant effectively runs at the daily-schedule rate (0.70 = 70%).",
-        )
-
-        st.markdown("#### Annual Yield")
-        annual_yield_df = pd.DataFrame([
-            {
-                "Process": p,
-                "Annual Yield (tonnes CO2)": round(
-                    comparison[p]["Total Yield (kg CO2)"] * 365 * capacity_factor / 1000, 1
-                ),
-            }
-            for p in available_processes
-        ])
-        st.dataframe(annual_yield_df, use_container_width=True, hide_index=True)
-        fig_ann_yield, ax_ann_yield = plt.subplots(figsize=(8, 5))
-        bars_ann_yield = ax_ann_yield.bar(
-            available_processes, annual_yield_df["Annual Yield (tonnes CO2)"],
-            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
-        )
-        for bar in bars_ann_yield:
-            ax_ann_yield.annotate(
-                f"{bar.get_height():,.1f}",
-                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                ha="center", va="bottom", fontsize=10,
-            )
-        ax_ann_yield.set_title("Annual Yield (tonnes CO2) by Process")
-        ax_ann_yield.set_ylabel("Annual Yield (tonnes CO2)")
-        plt.setp(ax_ann_yield.get_xticklabels(), rotation=45, ha="right")
-        plt.tight_layout()
-        st.pyplot(fig_ann_yield)
-        plt.close(fig_ann_yield)
-
-        st.markdown("#### Annual Energy")
-        annual_energy_df = pd.DataFrame([
-            {
-                "Process": p,
-                "Annual Energy (MWh)": round(
-                    comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor / 1000, 1
-                ),
-            }
-            for p in available_processes
-        ])
-        st.dataframe(annual_energy_df, use_container_width=True, hide_index=True)
-        fig_ann_energy, ax_ann_energy = plt.subplots(figsize=(8, 5))
-        bars_ann_energy = ax_ann_energy.bar(
-            available_processes, annual_energy_df["Annual Energy (MWh)"],
-            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
-        )
-        for bar in bars_ann_energy:
-            ax_ann_energy.annotate(
-                f"{bar.get_height():,.1f}",
-                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                ha="center", va="bottom", fontsize=10,
-            )
-        ax_ann_energy.set_title("Annual Energy (MWh) by Process")
-        ax_ann_energy.set_ylabel("Annual Energy (MWh)")
-        plt.setp(ax_ann_energy.get_xticklabels(), rotation=45, ha="right")
-        plt.tight_layout()
-        st.pyplot(fig_ann_energy)
-        plt.close(fig_ann_energy)
-
-        st.markdown("#### Annual Cost & Levelized Cost")
+        st.markdown("### Levelized Cost of Capture (annual projection)")
         annual_energy_opex_map = {
             p: comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor * cost_per_kwh
             for p in available_processes
@@ -4308,6 +4141,177 @@ with tab5:
         else:
             st.info(f"No cost data to break down yet for {cost_breakdown_process}.")
 
+        st.markdown("### Annual Yield & Energy")
+        st.caption(
+            "Scales each process's daily totals (from the schedule above) up to a full year: "
+            "Daily total × 365 days × capacity factor. The capacity factor accounts for planned "
+            "and unplanned downtime, since the plant won't run at the daily-schedule rate every "
+            "day of the year."
+        )
+
+        st.markdown("#### Annual Yield")
+        annual_yield_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Annual Yield (tonnes CO2)": round(
+                    comparison[p]["Total Yield (kg CO2)"] * 365 * capacity_factor / 1000, 1
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(annual_yield_df, use_container_width=True, hide_index=True)
+        fig_ann_yield, ax_ann_yield = plt.subplots(figsize=(8, 5))
+        bars_ann_yield = ax_ann_yield.bar(
+            available_processes, annual_yield_df["Annual Yield (tonnes CO2)"],
+            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
+        )
+        for bar in bars_ann_yield:
+            ax_ann_yield.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_ann_yield.set_title("Annual Yield (tonnes CO2) by Process")
+        ax_ann_yield.set_ylabel("Annual Yield (tonnes CO2)")
+        plt.setp(ax_ann_yield.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_ann_yield)
+        plt.close(fig_ann_yield)
+
+        st.markdown("#### Annual Energy")
+        annual_energy_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Annual Energy (MWh)": round(
+                    comparison[p]["Total Energy (kWh)"] * 365 * capacity_factor / 1000, 1
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(annual_energy_df, use_container_width=True, hide_index=True)
+        fig_ann_energy, ax_ann_energy = plt.subplots(figsize=(8, 5))
+        bars_ann_energy = ax_ann_energy.bar(
+            available_processes, annual_energy_df["Annual Energy (MWh)"],
+            color=[PROCESS_COLORS[p] for p in available_processes], edgecolor="black", alpha=0.9,
+        )
+        for bar in bars_ann_energy:
+            ax_ann_energy.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_ann_energy.set_title("Annual Energy (MWh) by Process")
+        ax_ann_energy.set_ylabel("Annual Energy (MWh)")
+        plt.setp(ax_ann_energy.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_ann_energy)
+        plt.close(fig_ann_energy)
+
+        st.markdown("### Daily Schedule Comparison")
+        st.caption("Totals for one operating day, straight from each schedule.")
+        comparison_df = pd.DataFrame([
+            {
+                "Process": p,
+                "Total Cycles": comparison[p]["Total Cycles"],
+                "Total Yield (kg CO2)": round(comparison[p]["Total Yield (kg CO2)"], 1),
+                "Total Energy (kWh)": round(comparison[p]["Total Energy (kWh)"], 1),
+                "kWh per kg CO2": (
+                    round(comparison[p]["Total Energy (kWh)"] / comparison[p]["Total Yield (kg CO2)"], 3)
+                    if comparison[p]["Total Yield (kg CO2)"] > 0 else "—"
+                ),
+                "Water Cost ($)": round(water_opex_map[p], 2),
+                "Other OPEX ($)": round(misc_opex_daily, 2),
+                "Levelized Cost ($/tonne CO2)": (
+                    round(levelized_cost_map[p], 2) if levelized_cost_map[p] is not None else "—"
+                ),
+            }
+            for p in available_processes
+        ])
+        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "Levelized Cost = (Energy cost + Water cost + amortized CAPEX apportioned to one day + "
+            "Other OPEX apportioned to one day) ÷ Total Yield in tonnes. Water cost = Total Cycles × "
+            f"{water_per_cycle_l:g} L/cycle × water cost per litre. CAPEX is amortized over "
+            f"{amortization_years:g} years (Annual CAPEX ÷ 365 for the daily share). Other OPEX "
+            "(Maintenance, Casual Labour, Security, WW Disposable, Solar Lease) is a flat quarterly "
+            "total ÷ 90 days, the same for every process — see the CAPEX and Other Operational Costs "
+            "sections below to edit the line items, the amortization period, and which processes draw "
+            "on which CAPEX lines."
+        )
+
+        st.markdown("#### Compare a parameter across processes")
+        selected_metric = st.selectbox(
+            "Parameter",
+            ["Total Cycles", "Total Yield (kg CO2)", "Total Energy (kWh)", "Levelized Cost ($/tonne CO2)"],
+            key="comparison_metric",
+        )
+        if selected_metric == "Levelized Cost ($/tonne CO2)":
+            values = [levelized_cost_map[p] or 0.0 for p in available_processes]
+        else:
+            values = [comparison[p][selected_metric] for p in available_processes]
+        fig_bar, ax_bar = plt.subplots(figsize=(8, 5))
+        bars = ax_bar.bar(
+            available_processes, values,
+            color=[PROCESS_COLORS[p] for p in available_processes],
+            edgecolor="black", alpha=0.9,
+        )
+        for bar in bars:
+            ax_bar.annotate(
+                f"{bar.get_height():,.1f}",
+                xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                ha="center", va="bottom", fontsize=10,
+            )
+        ax_bar.set_title(f"{selected_metric} by Process")
+        ax_bar.set_ylabel(selected_metric)
+        ax_bar.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
+        plt.setp(ax_bar.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+        st.pyplot(fig_bar)
+        plt.close(fig_bar)
+
+        st.markdown("### Idle Time Summary")
+        st.caption(
+            "Average Idle (min) and Utilisation % across the day for each process — per module for "
+            "Full Schedule Analysis, per pair for Advanced Interleaved (that's the finest-grained unit "
+            "each scheduler tracks). Idle = Operating Period − Active (any phase); Cooling and "
+            "Repressurization count as busy, not idle."
+        )
+        idle_available = [p for p in available_processes if "Avg Idle (min)" in comparison[p]]
+        idle_stale = [p for p in available_processes if "Avg Idle (min)" not in comparison[p]]
+        if idle_stale:
+            st.info(
+                "Re-click Generate for: " + ", ".join(idle_stale) +
+                " to include them here (idle time wasn't recorded the last time they ran)."
+            )
+        if idle_available:
+            idle_df = pd.DataFrame([
+                {
+                    "Process": p,
+                    "Avg Idle (min)": comparison[p]["Avg Idle (min)"],
+                    "Avg Utilisation %": comparison[p]["Avg Utilisation %"],
+                }
+                for p in idle_available
+            ])
+            st.dataframe(idle_df, use_container_width=True, hide_index=True)
+
+            fig_idle, ax_idle = plt.subplots(figsize=(8, 5))
+            bars_idle = ax_idle.bar(
+                idle_available, [comparison[p]["Avg Idle (min)"] for p in idle_available],
+                color=[PROCESS_COLORS[p] for p in idle_available], edgecolor="black", alpha=0.9,
+            )
+            for bar in bars_idle:
+                ax_idle.annotate(
+                    f"{bar.get_height():,.1f}",
+                    xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    ha="center", va="bottom", fontsize=10,
+                )
+            ax_idle.set_title("Average Idle Time (min) by Process")
+            ax_idle.set_ylabel("Avg Idle (min)")
+            plt.setp(ax_idle.get_xticklabels(), rotation=45, ha="right")
+            plt.tight_layout()
+            st.pyplot(fig_idle)
+            plt.close(fig_idle)
+
         st.markdown("### CAPEX")
         st.caption(
             "Capital expenditure by asset, already folded into the Levelized Cost figures above — "
@@ -4371,3 +4375,51 @@ with tab5:
             f"${misc_opex_daily:,.2f}/day (÷ 90) → ${misc_opex_annual:,.2f}/year (× 365), "
             "the same for every configuration."
         )
+
+        # === Bottom line (rendered at the top of the tab via bottom_line_box) ===
+        with bottom_line_box:
+            st.markdown("### Bottom Line")
+            ranked = sorted(
+                [p for p in available_processes if levelized_cost_annual_map[p] is not None],
+                key=lambda p: levelized_cost_annual_map[p],
+            )
+            if not ranked:
+                st.info(
+                    "Levelized cost of capture can't be calculated yet: every generated process has a "
+                    "yield of 0. Check the Yield per Cycle values in each configuration's tables."
+                )
+            else:
+                best = ranked[0]
+                best_lc = levelized_cost_annual_map[best]
+                if len(ranked) > 1:
+                    runner_up = ranked[1]
+                    gap = levelized_cost_annual_map[runner_up] - best_lc
+                    gap_pct = 100 * gap / levelized_cost_annual_map[runner_up]
+                    st.success(
+                        f"**{best}** has the lowest levelized cost of capture: **${best_lc:,.0f} per tonne CO2**, "
+                        f"${gap:,.0f}/tonne ({gap_pct:.0f}%) below the next best, {runner_up}."
+                    )
+                else:
+                    st.success(f"**{best}**: levelized cost of capture **${best_lc:,.0f} per tonne CO2**.")
+                bl_col1, bl_col2, bl_col3, bl_col4 = st.columns(4)
+                bl_col1.metric("Levelized cost", f"${best_lc:,.0f}/t")
+                bl_col2.metric("Annual yield", f"{annual_yield_tonnes_map[best]:,.1f} t CO2")
+                bl_col3.metric("Cycles per day", f"{comparison[best]['Total Cycles']}")
+                if "Avg Idle (min)" in comparison[best]:
+                    bl_col4.metric("Avg idle per day", f"{comparison[best]['Avg Idle (min)']:,.0f} min")
+                ranking_df = pd.DataFrame([
+                    {
+                        "Rank": rank,
+                        "Process": p,
+                        "Levelized Cost ($/tonne CO2)": round(levelized_cost_annual_map[p], 0),
+                        "Annual Yield (t CO2)": round(annual_yield_tonnes_map[p], 1),
+                        "Cycles per Day": comparison[p]["Total Cycles"],
+                        "Avg Idle (min)": comparison[p].get("Avg Idle (min)", "—"),
+                    }
+                    for rank, p in enumerate(ranked, start=1)
+                ])
+                st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+                st.caption(
+                    f"Ranked by levelized cost of capture, annual projection at a {capacity_factor:.0%} "
+                    "capacity factor. Assumptions and the full cost breakdown are below."
+                )
