@@ -2812,35 +2812,6 @@ with tab3:
         st.pyplot(fig_comp)
         plt.close(fig_comp)
 
-        # Diagnostic: Adsorption durations by module
-        groups_equal = PHASE_DURATIONS_BY_GROUP[GROUP_IDS[0]] == PHASE_DURATIONS_BY_GROUP[GROUP_IDS[1]]
-        ads_df = schedule_int[(schedule_int["Phase"] == "Adsorption") & schedule_int["Complete"]].copy()
-        if len(ads_df) > 0:
-            ads_df["Duration"] = ads_df["End"] - ads_df["Start"]
-            ads_summary = ads_df.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
-            expected = int(PHASE_DURATIONS["Adsorption"])
-            with st.expander("Schedule diagnostic: Adsorption durations by module"):
-                diag_col1, diag_col2 = st.columns(2)
-                with diag_col1:
-                    st.caption("Interleaved")
-                    st.dataframe(ads_summary, use_container_width=True, hide_index=True)
-                    deviants_int = ads_summary[(ads_summary["min"] != expected) | (ads_summary["max"] != expected)]
-                    if len(deviants_int) > 0 and groups_equal:
-                        st.warning(f"Modules {list(deviants_int.index)} have Adsorption ≠ {expected} min")
-                with diag_col2:
-                    st.caption("Concurrent")
-                    ads_conc = schedule_conc[(schedule_conc["Phase"] == "Adsorption") & schedule_conc["Complete"]].copy()
-                    if len(ads_conc) > 0:
-                        ads_conc["Duration"] = ads_conc["End"] - ads_conc["Start"]
-                        ads_conc_summary = ads_conc.groupby("Module")["Duration"].agg(["min", "max", "mean", "count"]).round(1)
-                        st.dataframe(ads_conc_summary, use_container_width=True, hide_index=True)
-                        deviants_conc = ads_conc_summary[(ads_conc_summary["min"] != expected) | (ads_conc_summary["max"] != expected)]
-                        if len(deviants_conc) > 0 and groups_equal:
-                            st.warning(f"Modules {list(deviants_conc.index)} have Adsorption ≠ {expected} min")
-                st.caption("All modules should show the same min/max when 'Different phase durations per group' is off.")
-                st.download_button("Download Concurrent schedule (CSV)", schedule_conc.to_csv(index=False), file_name=f"schedule_concurrent{key_suffix}.csv", mime="text/csv", key=f"dl_schedule_conc{key_suffix}")
-                st.download_button("Download Interleaved schedule (CSV)", schedule_int.to_csv(index=False), file_name=f"schedule_interleaved{key_suffix}.csv", mime="text/csv", key=f"dl_schedule_int{key_suffix}")
-
         # === Module Utilisation & Idle Time ===
         def compute_module_metrics(schedule_df):
             """Returns DataFrame with Module, Active (min), Idle (min), Adsorption (min), Utilisation %, Adsorption Utilisation %."""
