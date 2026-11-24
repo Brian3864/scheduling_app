@@ -750,6 +750,9 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+# Increments on every rerun; each result published to process_comparison is
+# stamped with it, so Yield vs Cycles can tell which results were generated last.
+st.session_state["app_run_id"] = st.session_state.get("app_run_id", 0) + 1
 tab3, tab4, tab5 = st.tabs(["Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
 
 if False:  # Module pair analysis removed (fan pairing fixed)
@@ -2553,11 +2556,13 @@ with tab3:
         # in "Cycle count per pair".
         st.session_state.setdefault("process_comparison", {})
         st.session_state["process_comparison"][f"Concurrent{comparison_suffix}"] = {
+            "Run": st.session_state["app_run_id"],
             "Total Cycles": int(yield_energy_conc["Total Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_conc["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_conc["Total Energy (kWh)"].sum()),
         }
         st.session_state["process_comparison"][f"Interleaved{comparison_suffix}"] = {
+            "Run": st.session_state["app_run_id"],
             "Total Cycles": int(yield_energy_int["Total Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_int["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_int["Total Energy (kWh)"].sum()),
@@ -3813,6 +3818,7 @@ with tab4:
         # this configuration's "Generate" button is (re)clicked — see that tab's caption.
         st.session_state.setdefault("process_comparison", {})
         st.session_state["process_comparison"][comparison_key] = {
+            "Run": st.session_state["app_run_id"],
             "Total Cycles": int(yield_energy_df["Complete Cycles"].sum()),
             "Total Yield (kg CO2)": float(yield_energy_df["Total Yield (kg CO2)"].sum()),
             "Total Energy (kWh)": float(yield_energy_df["Total Energy (kWh)"].sum()),
@@ -4383,29 +4389,46 @@ with tab5:
                 [p for p in available_processes if levelized_cost_annual_map[p] is not None],
                 key=lambda p: levelized_cost_annual_map[p],
             )
-            if not ranked:
+            # The card features the most recently generated configuration: the
+            # processes published in the latest run (Concurrent + Interleaved for a
+            # Full Schedule Analysis configuration, one process for an Advanced
+            # Interleaved one, or several after a "Generate all").
+            latest_run = max(comparison[p].get("Run", 0) for p in available_processes)
+            latest = [p for p in available_processes if comparison[p].get("Run", 0) == latest_run]
+            latest_ranked = [p for p in ranked if p in latest]
+            if not latest_ranked:
                 st.markdown("### Bottom Line")
                 st.info(
-                    "Levelized cost of capture can't be calculated yet: every generated process has a "
-                    "yield of 0. Check the Yield per Cycle values in each configuration's tables."
+                    "Levelized cost of capture can't be calculated for the latest result ("
+                    + ", ".join(latest) + "): its yield is 0. Check the Yield per Cycle values in "
+                    "that configuration's tables."
                 )
             else:
-                best = ranked[0]
+                best = latest_ranked[0]
                 best_lc = levelized_cost_annual_map[best]
                 # "$" is written as &#36; throughout: Streamlit's markdown treats text
                 # between two "$" signs as a LaTeX formula.
                 best_name = html_lib.escape(best)
-                if len(ranked) > 1:
-                    runner_up = ranked[1]
+                verdict_parts = []
+                if len(latest_ranked) > 1:
+                    runner_up = latest_ranked[1]
                     gap = levelized_cost_annual_map[runner_up] - best_lc
                     gap_pct = 100 * gap / levelized_cost_annual_map[runner_up]
-                    verdict = (
-                        f"<b>{best_name}</b> captures CO2 at the lowest cost, "
-                        f"<b>&#36;{gap:,.0f}/t ({gap_pct:.0f}%) cheaper</b> than the next best, "
-                        f"{html_lib.escape(runner_up)}."
+                    verdict_parts.append(
+                        f"<b>{best_name}</b> is the cheaper option in this run, "
+                        f"<b>&#36;{gap:,.0f}/t ({gap_pct:.0f}%) below</b> {html_lib.escape(runner_up)}."
                     )
-                else:
-                    verdict = f"<b>{best_name}</b> is the only process with a levelized cost so far."
+                overall_rank = ranked.index(best) + 1
+                if len(ranked) > 1:
+                    if overall_rank == 1:
+                        verdict_parts.append(f"Lowest of all {len(ranked)} processes generated so far.")
+                    else:
+                        leader = ranked[0]
+                        verdict_parts.append(
+                            f"Ranks #{overall_rank} of {len(ranked)} generated so far; the cheapest is "
+                            f"{html_lib.escape(leader)} at &#36;{levelized_cost_annual_map[leader]:,.0f}/t."
+                        )
+                verdict = " ".join(verdict_parts) or f"<b>{best_name}</b>: latest generated result."
                 idle = comparison[best].get("Avg Idle (min)")
                 tiles = [
                     ("Annual yield", f"{annual_yield_tonnes_map[best]:,.1f}", "t CO2 / year"),
@@ -4439,7 +4462,7 @@ with tab5:
 .bl-unit {{ font-size: 0.85rem; color: #c8f2df; }}
 </style>
 <div class="bl-card">
-  <div class="bl-eyebrow">Bottom line &middot; Levelized cost of capture</div>
+  <div class="bl-eyebrow">Latest result &middot; Levelized cost of capture</div>
   <div class="bl-hero">
     <div>
       <div class="bl-hero-label">{best_name}</div>
@@ -4467,7 +4490,7 @@ with tab5:
                 st.dataframe(
                     ranking_df.style.apply(
                         lambda row: ["background-color: #d8f3e6; color: #0b3d2e; font-weight: 700"
-                                     if row["Rank"] == 1 else "" for _ in row],
+                                     if row["Process"] == best else "" for _ in row],
                         axis=1,
                     ),
                     use_container_width=True, hide_index=True,
@@ -4476,6 +4499,7 @@ with tab5:
                     },
                 )
                 st.caption(
-                    f"Ranked by levelized cost of capture, annual projection at a {capacity_factor:.0%} "
-                    "capacity factor. Assumptions and the full cost breakdown are below."
+                    f"All generated processes, ranked by levelized cost of capture (annual projection at a "
+                    f"{capacity_factor:.0%} capacity factor). The highlighted row is the latest result shown "
+                    "above. Assumptions and the full cost breakdown are below."
                 )
