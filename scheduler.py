@@ -570,23 +570,15 @@ def get_versioned_default_table(state_key, expected_columns, version, build_fn):
 
 st.sidebar.markdown("### ℹ️ Guide")
 st.sidebar.markdown("""
-**Tab 1: General Test**  
-Customize:
-- **Adsorption and Desorption durations**
-- **Resource limits** – define how many modules can run each phase concurrently
-
-**Tab 2: M2&M4 + LRVP**  
-Stage-based visualization for paired modules.
-
-**Tab 3: Full Schedule Analysis**
-- Four configurations, run side by side from one "Generate" button: the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; both are now directly recorded combinations in their own right, so Group A's Duration, Energy and Yield all come from N3N4-M1n3's own real average and Group B's from N3N4-M2n4's own real average — no more borrowing Group A's number for Group B, and no more type-matched sum for Yield either; only cycles logged on or after 2026-11-18 feed these defaults), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
+**Tab 1: Full Schedule Analysis**
+- Four configurations, each on its own tab with its own "Generate" button (or run all four from the button at the top): the main **8-8** setup (a 16-module plant, Group A + B of 8 modules each; now that N3N4-M1n3M2n4 is a real recorded 8-module combination, both groups' Duration, Energy and Yield all come from its own real average — replacing the previous N1N2N3-M1n3 + N3-M2n4 estimate — fully editable if a pair's real output differs), a **4-4** setup (an 8-module plant, Group A = N3 & N4's M1/M3, Group B = N3 & N4's M2/M4; both are now directly recorded combinations in their own right, so Group A's Duration, Energy and Yield all come from N3N4-M1n3's own real average and Group B's from N3N4-M2n4's own real average — no more borrowing Group A's number for Group B, and no more type-matched sum for Yield either; only cycles logged on or after 2026-11-18 feed these defaults), a **2-2** setup (a 4-module plant, Group A + B of 2 modules each, all three rates taken directly from N3-M2n4's own real average with no scaling, since it's an actual 2-module combination), and a **6-6** setup (a 12-module plant, Group A = N2, N3 & N4's M1/M3, Group B = N2, N3 & N4's M2/M4 — no N1 — both groups' Duration comes from N3N4-M1n3's own real average (Group B borrows Group A's, since there's no real N3N4-M2n4 combo), while Energy/Yield stay type-matched: Group A sums N3N4-M1n3 + N4-M1n3, Group B sums N4-M2n4 doubled + N3-M2n4)
 - Configure phase durations per group, adsorption capacity, and shared resource caps (Evacuation+Cooling, NCG+Heating+CO2) — each configuration has its own capacity inputs, but shares the Operating Period and Evacuation/Cooling behavior checkboxes
 - Scheduling is first-come-first-served in time order — no group has priority. NCG Purging → Heating → CO2 Purging runs as one unbroken block, and only one group can be in it at a time (Interleaved); the other group can evacuate, then waits. Group B can start pre-loaded (in Evacuation at minute 0) to avoid a startup gap
 - A cycle can start before the end of the operating period and run past it (the plant keeps going into the next day); only cycles that finish inside the period count toward cycles, yield and energy
 - Baseline analysis per configuration: Group A only (no sharing) vs Group A+B Concurrent vs Group A+B Interleaved
 - Gantt charts, cycle counts, phase breakdown (total minutes per phase), and an idle-time breakdown by cause, for every configuration
 
-**Tab 4: Advanced Interleaved**
+**Tab 2: Advanced Interleaved**
 
 Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs — Group A, Group B, and Group C.
 - Each pair cycles through Adsorption → Evacuation → NCG Purging → Heating → CO2 Purging → Cooling → Repressurization, scheduled first-come-first-served in time order with no pair favored
@@ -594,13 +586,13 @@ Models a Carbon Nest schedule for a 16-module plant, grouped into three pairs �
 - Evacuation takes priority over Cooling: if another pair evacuates while a pair is still cooling, that pair's Cooling pauses and resumes with its remaining duration as soon as the Evacuation ends
 - A cycle can start before the end of the operating period and run past it; only cycles that finish inside the period count as complete. Each configuration also shows an idle-time breakdown by cause
 - Gantt charts, complete-cycle counts, and phase breakdowns (total minutes per phase) are generated once phase durations are filled in for every pair and the schedule is generated
-- Five configurations are compared side by side, grouped into two families:
+- Five configurations, each on its own tab with its own "Generate" button (or run all five from the button at the top), grouped into two families:
   - **3-Pair Configurations** (original Adsorption-overlap rule: one privileged pair can overlap Adsorption with the other two, but those two cannot overlap each other): 6-6-4 and 8-4-4 (different module-to-pair groupings), and 6-5-5 (a 6-module pair sourced entirely from N1N2N3-M1n3, plus two 5-module pairs sourced from N1N2-M1n3 for durations/Energy but weighted sums of N2-M2n4/N3-M2n4 for Yield)
   - **4-Pair Configurations** (every pair's Adsorption overlaps freely with every other pair's, since the original 3-pair rule doesn't generalize to a 4th pair without an unverified assumption): 4-4-4-4 (four equal 4-module pairs by Nelion-pair x position, all sourced from N1N2-M1n3 for durations/Energy, split for Yield), and 2-2-2-2 (N3/N4) (a second 4-equal-group config covering only Nelion 3 and 4's 8 modules, grouped by module type: now that Nelion 4 has its own recorded cycles, every group sources Duration, Energy and Yield directly from its own matching Module — Group A/C from N3-M1n3/N3-M2n4, Group B/D from N4-M1n3/N4-M2n4 — with no mirroring across Nelions)
 
 *Note: schedule quality depends heavily on the phase durations entered — configure realistic per-phase timings for each pair before drawing conclusions from the results.*
 
-**Tab 5: Yield vs Cycles**
+**Tab 3: Yield vs Cycles**
 Compares Total Cycles, Total Yield, and Total Energy across thirteen processes: Concurrent (8-8), Interleaved (8-8), Concurrent (4-4), Interleaved (4-4), Concurrent (2-2), Interleaved (2-2), Concurrent (6-6), Interleaved (6-6) from Full Schedule Analysis's four configurations, and all five Advanced Interleaved configurations — the 3-Pair family (6-6-4, 8-4-4, 6-5-5) followed by the 4-Pair family (4-4-4-4, 2-2-2-2 N3/N4). It shows each process's numbers from the last time its own "Generate" button was clicked — it does not recompute live as you edit inputs elsewhere, since Full Schedule Analysis's optimization is too heavy to re-run on every keystroke. Re-click Generate in a tab to refresh its entries here.
 """)
 
@@ -738,7 +730,7 @@ def idle_breakdown_table(schedule_df, unit_col, units_by_label, total_minutes):
 
 
 st.markdown("<h1 style='text-align: center;'>Nelion Cycle Schedule</h1>", unsafe_allow_html=True)
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["General Test", "M2&M4 + LRVP", "Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
+tab3, tab4, tab5 = st.tabs(["Full Schedule Analysis", "Advanced Interleaved", "Yield vs Cycles"])
 
 if False:  # Module pair analysis removed (fan pairing fixed)
           # Everything inside this `if False:` block is DISABLED and never runs — it's
@@ -1407,124 +1399,6 @@ if False:  # Module pair analysis removed (fan pairing fixed)
           top_3 = df_comparison.nlargest(3, "CO₂ Captured (kg)")[["Configuration", "Mode", "Total Cycles", "CO₂ Captured (kg)", "kg/Hour", "Avg Utilization %"]]
           st.dataframe(top_3, use_container_width=True, hide_index=True)
      
-with tab1:
-# === INDIVIDUAL MODULE OPERATION ===
-# "General Test": the simplest scheduler in the app. Every module runs the same
-# two phases (Adsorption, Desorption) back to back, sharing two capacity-limited
-# resource pools, for as many complete cycles as fit in the operating period.
-    st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("Phase Duration")
-        adsorption_duration = st.number_input("*Adsorption (min)*", 10, 240, 30)
-        desorption_duration = st.number_input("*Desorption (min)*", 10, 240, 100)
-        total_mins = st.number_input("*Operating Period (min)*", 0, 1440, 1440)
-  
-    with col2:
-        st.markdown("Resource Limits")
-        tots = st.number_input("*Total Modules*", 1, 16, 2)
-        ads_mod = st.number_input("*Adsorbing Modules*", 1, 16, 2)
-        des_mod = st.number_input("*Desorbing Modules*", 1, 16, 2)
-
-    RESOURCE_LIMITS = {'Adsorption': ads_mod, 
-                       'Desorption': des_mod}
-    PHASE_DURATIONS = {'Adsorption': adsorption_duration,
-                        'Desorption': desorption_duration}
-    PHASES = list(PHASE_DURATIONS.keys())
-    TOTAL_MODULES = tots
-    MODULES = [f'M{i}' for i in range(1, TOTAL_MODULES + 1)]
-    TOTAL_MINUTES = total_mins
-
-# === RESOURCE TRACKING ===
-    resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
-    module_timers = {mod: 0 for mod in MODULES} 
-    schedule = []
-
-# === SCHEDULING FUNCTIONS ===
-    def can_allocate(phase, start, duration):
-        """True if every minute of [start, start+duration) still has spare capacity for this phase."""
-        return all(resource_usage[phase][t] < RESOURCE_LIMITS[phase] for t in range(start, start + duration))
-
-    def reserve(phase, start, duration):
-        """Occupy one capacity slot of this phase for every minute in [start, start+duration)."""
-        for t in range(start, start + duration):
-            resource_usage[phase][t] += 1
-
-# === SCHEDULING LOOP ===
-# Repeatedly sweep all modules, giving each the next phase in its cycle as soon as
-# capacity allows, until a full pass places nothing new (either the operating period
-# is used up or every module is waiting on a full resource).
-    while True:
-        progress = False
-        for mod in MODULES:
-            t = module_timers[mod]
-            cycle_phases = []
-            for phase in PHASES:
-                duration = PHASE_DURATIONS[phase]
-                # Look for the earliest minute, from this module's current time onward,
-                # where the phase's resource pool has a free slot.
-                while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
-                    t += 1
-                if t + duration > TOTAL_MINUTES:
-                    break
-                cycle_phases.append((phase, t, t + duration))
-                reserve(phase, t, duration)
-                t += duration
-            # Only commit this module's phases if it completed the FULL phase list
-            # (Adsorption + Desorption) — a partial cycle at the end of the period is dropped.
-            if len(cycle_phases) == len(PHASES):
-                for phase, start, end in cycle_phases:
-                    schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
-                module_timers[mod] = t
-                progress = True
-        if not progress:
-            break
-
-    df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
-
-# === FLEXIBLE CYCLE COUNT ===
-# Count each module's complete cycles by sliding a window over its scheduled phases
-# and matching it against the expected phase order (handles any leftover/partial rows).
-    cycle_counts = []
-    for mod in MODULES:
-        mod_df = df_schedule[df_schedule['Module'] == mod].sort_values(by='Start').reset_index(drop=True)
-        count = 0
-        i = 0
-        while i <= len(mod_df) - len(PHASES):
-            window = mod_df.iloc[i:i+len(PHASES)]
-            if list(window['Phase']) == PHASES:
-                count += 1
-                i += len(PHASES)
-            else:
-                i += 1
-        cycle_counts.append({'Module': mod, 'Complete Cycles': count})
-    cycle_counts_df = pd.DataFrame(cycle_counts)
-    
-    st.markdown("<h2 style='text-align: center;'>Complete Cycles</h2>", unsafe_allow_html=True)
-    st.dataframe(cycle_counts_df)
-
-    # === GANTT CHART ===
-    colors = {'Adsorption': '#4B9CD3', 'Desorption': '#90EE90'}
-
-    fig, ax = plt.subplots(figsize=(12, 5))
-    df_schedule['Module'] = pd.Categorical(df_schedule['Module'], categories=MODULES, ordered=True)
-# Then sort the DataFrame by the new categorical 'Module' column to ensure plotting order.
-    df_schedule = df_schedule.sort_values('Module')
-    for _, row in df_schedule.iterrows():
-        ax.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
-                color=colors[row['Phase']], edgecolor='black')
-    ax.set_xlabel('Time (minutes)')
-    ax.set_title('Process Sequence')
-    ax.set_xlim(0, TOTAL_MINUTES)
-    ax.set_yticks(MODULES)
-    ax.set_yticklabels(MODULES) # Ensure labels match the ticks
-    ax.invert_yaxis()
-    ax.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()],
-              labels=colors.keys(), loc='upper right', fontsize=8)
-    plt.tight_layout()
-    st.pyplot(fig)
- 
 with tab3:
     # "Full Schedule Analysis": the app's main scheduler. Every module runs the full
     # 6-phase cycle (Adsorption -> Evacuation -> NCG Purging -> Heating -> CO2 Purging
@@ -2963,167 +2837,6 @@ with tab3:
             )
             if clicked or generate_all_tab3:
                 run_and_display_config(*cfg_args)
-
-with tab2:
-    # "M2&M4 + LRVP": fixed two-module (M2, M4) full 6-phase cycle, used to visualize
-    # how a staggered start delay (M4 starts `delay_m4` minutes after M2) plays out,
-    # with an optional "Concurrent" mode that locks the whole desorption chain +
-    # Cooling to one module at a time.
-    # === MODULES ===
-    MODULES = ["M2", "M4"]
-
-    # === PHASES ===
-    PHASES = ['Adsorption', 'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling']
-    DESORPTION_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging', 'Cooling'}
-    
-    # === STAGE DEFINITIONS ===
-    STAGE_1_PHASES = {'Cooling', 'Adsorption'}  # Stage 1: Cooling & Adsorption
-    STAGE_2_PHASES = {'Evacuation', 'NCG Purging', 'Heating', 'CO2 Purging'}  # Stage 2: Desorption
-
-    # === Input Configuration ===
-    st.markdown("<h2 style='text-align: center;'>Input Configuration</h2>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        delay_m4 = st.number_input("Start Delay for M4 (min) ", 0, 300, 49)
-        TOTAL_MINUTES = st.number_input("Operating Period (min) *Low Default Value set for better visibility of the stages* ", 0, 1440, 300)
-
-    with col2:
-        st.markdown("Stage 1")
-        ad_d = st.number_input("Adsorption Duration (mins)", 0, 120, 25)
-        cool_d = st.number_input("Cooling Duration (mins)", 0, 60, 30)
-    
-    with col3:
-        st.markdown("Stage 2")
-        evac_d = st.number_input("Evacuation Duration (mins)", 0, 60, 7)
-        ncg_d = st.number_input("NCG Purging Duration (mins)", 0, 60, 2)
-        heat_d = st.number_input("Heating Duration (mins)", 0, 60, 20)
-        co2_d = st.number_input("CO2 Purging Duration (mins)", 0, 60, 20)      
-
-    PHASE_DURATIONS = {
-        'Adsorption': ad_d,
-        'Evacuation': evac_d,
-        'NCG Purging': ncg_d,
-        'Heating': heat_d,
-        'CO2 Purging': co2_d,
-        'Cooling': cool_d
-    }
-
-    desorption_mode = st.radio(
-        "Desorption Strategy",
-        ('Interleaved', 'Concurrent'),
-        key='tab2_desorption_mode',
-        help="Interleaved: Multiple modules can run desorption phases in parallel. Concurrent: Limits how many pairs can be in adsorption and desorption at the same time (one-at-a-time per phase in this view)."
-    )
-
-    # === RESOURCE TRACKING ===
-    resource_usage = {phase: [0] * TOTAL_MINUTES for phase in PHASES}
-    MODULE_DELAYS = {'M2': 0, 'M4': delay_m4}
-    module_timers = {mod: MODULE_DELAYS.get(mod, 0) for mod in MODULES}
-    schedule = []
-    desorption_lock_time = 0
-
-    def can_allocate(phase, start, duration):
-        """True if this phase is completely free (no other module in it) for [start, start+duration)."""
-        return all(resource_usage[phase][t] == 0 for t in range(start, start + duration))
-
-    def reserve(phase, start, duration):
-        """Mark [start, start+duration) as occupied for this phase."""
-        for t in range(start, start + duration):
-            resource_usage[phase][t] += 1
-
-    # Same greedy "advance each module through its phases in turn" loop as tab1/tab3,
-    # but with only one slot per phase (can_allocate requires it to be fully free),
-    # plus an extra Concurrent-mode rule below.
-    while True:
-        progress = False
-        for mod in MODULES:
-            t = module_timers[mod]
-            cycle_phases = []
-            for phase in PHASES:
-                duration = PHASE_DURATIONS[phase]
-                # Concurrent mode: a module can't start its desorption chain until the
-                # previous module has finished Cooling (desorption_lock_time), so the
-                # whole Evacuation->...->Cooling block runs for one module at a time.
-                if desorption_mode == "Concurrent" and phase in DESORPTION_PHASES:
-                    t = max(t, desorption_lock_time)
-                while t + duration <= TOTAL_MINUTES and not can_allocate(phase, t, duration):
-                    t += 1
-                if t + duration > TOTAL_MINUTES:
-                    break
-                cycle_phases.append((phase, t, t + duration))
-                reserve(phase, t, duration)
-                if desorption_mode == "Concurrent" and phase == 'Cooling':
-                    # This module just finished Cooling; the next module's desorption
-                    # chain can't begin any earlier than this.
-                    desorption_lock_time = t + duration
-                t += duration
-            if len(cycle_phases) == len(PHASES):
-                for phase, start, end in cycle_phases:
-                    schedule.append({"Module": mod, "Phase": phase, "Start": start, "End": end})
-                module_timers[mod] = t
-                progress = True
-
-                
-        if not progress:
-            break
-
-    df_schedule = pd.DataFrame(schedule).sort_values(by=['Module', 'Start'])
-
-# === FLEXIBLE CYCLE COUNT ===
-    cycle_counts = []
-    for mod in MODULES:
-        mod_df = df_schedule[df_schedule['Module'] == mod].sort_values(by='Start').reset_index(drop=True)
-        count = 0
-        i = 0
-        while i <= len(mod_df) - len(PHASES):
-            window = mod_df.iloc[i:i+len(PHASES)]
-            if list(window['Phase']) == PHASES:
-                count += 1
-                i += len(PHASES)
-            else:
-                i += 1
-        cycle_counts.append({'Module': mod, 'Complete Cycles': count})
-    cycle_counts_df = pd.DataFrame(cycle_counts)
-    
-    st.markdown("<h2 style='text-align: center;'>Complete Cycles</h2>", unsafe_allow_html=True)
-    st.dataframe(cycle_counts_df)
-    
-# === Gantt Chart with Stage Hatching Patterns ===
-    fig, ax1 = plt.subplots(figsize=(12, 5))
-    
-    # Phase colors
-    colors = {'Adsorption': '#4B9CD3', 'Evacuation': '#FFB347', 'NCG Purging': '#FFD700',
-              'Heating': '#E97451', 'CO2 Purging': '#90EE90', 'Cooling': '#9370DB'}
-    
-    # Draw bars with hatching patterns based on stage
-    for _, row in df_schedule.iterrows():
-        if row['Phase'] in STAGE_1_PHASES:
-            # Stage 1: Solid fill (no hatching)
-            ax1.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
-                     color=colors[row['Phase']], edgecolor='black', linewidth=1)
-        elif row['Phase'] in STAGE_2_PHASES:
-            # Stage 2: Diagonal line pattern overlay
-            ax1.barh(row['Module'], row['End'] - row['Start'], left=row['Start'],
-                     color=colors[row['Phase']], edgecolor='black', linewidth=1, hatch='///')
-    
-    ax1.set_title("Process Sequence (Solid = Stage 1, Hatched = Stage 2)")
-    ax1.set_xlim(0, TOTAL_MINUTES)
-    ax1.set_xlabel("Time (minutes)")
-    ax1.set_ylabel("Modules")
-    
-    # Create legend with phases and hatching styles
-    phase_legend = [plt.Rectangle((0, 0), 1, 1, color=c) for c in colors.values()]
-    hatch_legend = [plt.Rectangle((0, 0), 1, 1, facecolor='gray', edgecolor='black'),
-                    plt.Rectangle((0, 0), 1, 1, facecolor='gray', edgecolor='black', hatch='///')]
-    
-    # Combine legends
-    all_handles = phase_legend 
-    all_labels = list(colors.keys()) 
-    ax1.legend(all_handles, all_labels, loc='upper right', bbox_to_anchor=(1.25, 1))
-    st.pyplot(fig)
-
-    st.markdown("**Stage 1:** Cooling & Adsorption | **Stage 2:** Evacuation, NCG Purging, Heating, CO2 Purging")
 
 with tab4:
     # "Advanced Interleaved": a 3-pair (Group A/B/C) plant-level scheduler with a
